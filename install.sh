@@ -4,17 +4,30 @@ set -Eeuo pipefail
 
 REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
-INSTALL_DIR="${HOME}/.local/agy"
-TMP="${HOME}/.local/.agy-install.tar.gz"
+TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
+TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
+EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
+INSTALL_SUCCESS=0
 
 # Ensure base directories exist for fresh setups
-mkdir -p "${HOME}/.local" 2>/dev/null || true
+mkdir -p "$(dirname "$TMP")" 2>/dev/null || true
 
 # ── Cleanup Hook ──────────────────────────────────────────────────────────────
 cleanup() {
   printf "\033[?25h" # Restore cursor if cancelled
-  [[ -f "$TMP" ]] && rm -f "$TMP"
-  [[ -n "$TMP_LOGO" && -f "$TMP_LOGO" ]] && rm -f "$TMP_LOGO"
+  [[ -n "${TMP_LOGO:-}" && -f "$TMP_LOGO" ]] && rm -f "$TMP_LOGO"
+  [[ -n "${GLIBC_LOG:-}" && -f "$GLIBC_LOG" ]] && rm -f "$GLIBC_LOG"
+  [[ -n "${GLIBC_PCT:-}" && -f "$GLIBC_PCT" ]] && rm -f "$GLIBC_PCT"
+  [[ -d "$EXTRACT_DIR" ]] && rm -rf "$EXTRACT_DIR"
+  if [[ "${INSTALL_SUCCESS:-0}" -ne 1 ]]; then
+    [[ -f "$TMP" ]] && rm -f "$TMP"
+    [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]] && mv -f "$AGY_BAK" "$INSTALL_BIN_DIR/agy" || true
+    [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]] && mv -f "$AGY_VA39_BAK" "$INSTALL_BIN_DIR/agy.va39" || true
+  else
+    [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK" || true
+    [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK" || true
+  fi
 }
 
 handle_cancel() {
@@ -227,107 +240,101 @@ divider
 [[ "$(uname -m)" == "aarch64" ]] || die "Architecture must be aarch64"
 command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
+command -v pkg  >/dev/null 2>&1  || die "pkg is required"
 
-if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
-  echo "0" > "${TMP}.pct"
+if [[ ! -d "${TERMUX_PREFIX}/glibc" ]]; then
+  GLIBC_LOG="${TMP}.glibc.log"
+  GLIBC_PCT="${TMP}.pct"
+  echo "0" > "$GLIBC_PCT"
   {
     {
-      pkg install -y glibc-repo -o APT::Status-Fd=1 2>/dev/null || true
-      pkg install -y glibc -o APT::Status-Fd=1 2>/dev/null
-    } | awk '
+      pkg install -y glibc-repo -o APT::Status-Fd=1 || true
+      pkg install -y glibc -o APT::Status-Fd=1
+    } 2>&1 | tee -a "$GLIBC_LOG" | awk '
       /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
         split($0, a, ":")
-        print int(a[3]) > "'"${TMP}.pct"'"
-        close("'"${TMP}.pct"'")
+        pct = int(a[3])
+        if (pct < 0) pct = 0
+        if (pct > 100) pct = 100
+        print pct > "'"${GLIBC_PCT}"'"
+        close("'"${GLIBC_PCT}"'")
         fflush()
       }'
   } &
-  progress_spinner $! "Setting up Termux glibc environment..." "${TMP}.pct" || true
-  rm -f "${TMP}.pct"
+  progress_spinner $! "Setting up Termux glibc environment..." "$GLIBC_PCT" || true
+  rm -f "$GLIBC_PCT"
   
-  if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
-    die "Failed to install Termux glibc."
+  if [[ ! -d "${TERMUX_PREFIX}/glibc" ]]; then
+    [[ -f "$GLIBC_LOG" ]] && tail -n 30 "$GLIBC_LOG" >&2
+    die "Failed to install Termux glibc. Check internet and run: pkg update && pkg install -y glibc-repo glibc"
   fi
+  rm -f "$GLIBC_LOG"
 fi
 
 ok "Environment: Termux aarch64"
 
 # ── Clean previous install ────────────────────────────────────────────────────
-if [[ -e "$INSTALL_DIR" ]]; then
-  info "Removing previous installation..."
-  rm -rf "$INSTALL_DIR"
-fi
-mkdir -p "$INSTALL_DIR" "$(dirname "$TMP")" 2>/dev/null
+mkdir -p "$INSTALL_BIN_DIR" "$(dirname "$TMP")" 2>/dev/null
+rm -rf "$EXTRACT_DIR"
+mkdir -p "$EXTRACT_DIR"
 
 # ── Download ──────────────────────────────────────────────────────────────────
 download_with_progress "$URL" "$TMP" || die
 
 # ── Extraction ────────────────────────────────────────────────────────────────
-tar -xz -C "$INSTALL_DIR" -f "$TMP" >/dev/null 2>&1 &
+tar -xz -C "$EXTRACT_DIR" -f "$TMP" bin/agy bin/agy.va39 >/dev/null 2>&1 &
 spinner $! "Extracting binaries..." || die
 
-# Explicit cleanup because 'exec' bypasses the normal shell exit trap
-rm -f "$TMP"
+AGY_BAK=""
+AGY_VA39_BAK=""
+if [[ -f "$INSTALL_BIN_DIR/agy" ]]; then
+  AGY_BAK="$INSTALL_BIN_DIR/agy.bak.$$"
+  mv -f "$INSTALL_BIN_DIR/agy" "$AGY_BAK" || die "Failed to back up existing agy binary from $INSTALL_BIN_DIR"
+fi
+if [[ -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
+  AGY_VA39_BAK="$INSTALL_BIN_DIR/agy.va39.bak.$$"
+  mv -f "$INSTALL_BIN_DIR/agy.va39" "$AGY_VA39_BAK" || die "Failed to back up existing agy.va39 binary from $INSTALL_BIN_DIR"
+fi
+
+mv -f "$EXTRACT_DIR/bin/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to move agy binary to $INSTALL_BIN_DIR"
+mv -f "$EXTRACT_DIR/bin/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to move agy.va39 binary to $INSTALL_BIN_DIR"
+rm -rf "$EXTRACT_DIR"
 
 # Ensure executable bits are preserved
-chmod +x "$INSTALL_DIR/bin/"* 2>/dev/null || true
+chmod +x "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39" 2>/dev/null || true
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
-if [[ ! -f "$INSTALL_DIR/bin/agy" || ! -f "$INSTALL_DIR/bin/agy.va39" ]]; then
-  rm -rf "$INSTALL_DIR"
-  die
+if [[ ! -f "$INSTALL_BIN_DIR/agy" || ! -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
+  rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+  die "Verification failed: binaries not found in $INSTALL_BIN_DIR"
 fi
 ok "Binary found"
 
 # ── Test & Extract Version ────────────────────────────────────────────────────
 VERSION=""
-if VERSION=$("$INSTALL_DIR/bin/agy" --version 2>/dev/null); then
+if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
   ok "Engine online ($VERSION verified)"
+  [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
+  [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
 else
-  rm -rf "$INSTALL_DIR"
+  rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
   die "Binaries failed to execute locally. Check dependencies."
-fi
-
-# ── PATH Configuration ────────────────────────────────────────────────────────
-ADDED_PATH=0
-PREFER_ZSH=0
-# Detect if user is running zsh right now to tailor instructions later
-[[ "${SHELL:-}" == *"zsh"* ]] && PREFER_ZSH=1
-
-for RC_FILE in "$HOME/.bashrc" "$HOME/.zshrc"; do
-  if [[ -f "$RC_FILE" || "$RC_FILE" == *".bashrc" ]]; then
-    if ! grep -q "local/agy/bin" "$RC_FILE" 2>/dev/null; then
-      echo 'export PATH="$HOME/.local/agy/bin:$PATH"' >> "$RC_FILE"
-      ok "Updated $(basename "$RC_FILE")"
-      ADDED_PATH=1
-    fi
-  fi
-done
-
-if (( ADDED_PATH == 0 )); then
-  if [[ ! -f "$HOME/.bashrc" && ! -f "$HOME/.zshrc" ]]; then
-    info "Warning: No shell configuration files found. Created ~/.bashrc"
-  else
-    info "PATH already configured in shell"
-  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 printf '\n%b\n' "${GREEN}${BOLD}Installation Complete.${RESET}"
 divider
-info "To use immediately without restarting, run:"
-if (( PREFER_ZSH == 1 )); then
-  info "${BOLD}source ~/.zshrc${RESET}"
-else
-  info "${BOLD}source ~/.bashrc${RESET}"
-fi
-info "Then type: ${BOLD}agy${RESET}"
+info "Installed binaries to: ${BOLD}${INSTALL_BIN_DIR}${RESET}"
+info "Release archive kept at: ${BOLD}${TMP}${RESET}"
+info "Optional verification:"
+info "${BOLD}cd ${TERMUX_PREFIX}/tmp && gh attestation verify antigravity-termux-standalone.tar.gz --owner wallentx${RESET}"
 printf '\n'
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 info "Launching Antigravity CLI..."
-sleep 0.5
 
-export PATH="$INSTALL_DIR/bin:$PATH"
+export PATH="$INSTALL_BIN_DIR:$PATH"
 clear
-exec "$INSTALL_DIR/bin/agy"
+INSTALL_SUCCESS=1
+cleanup
+exec "$INSTALL_BIN_DIR/agy"
