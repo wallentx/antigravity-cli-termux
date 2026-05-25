@@ -78,6 +78,33 @@ spinner() {
   return $exit_status
 }
 
+progress_spinner() {
+  local pid=$1
+  local msg=$2
+  local pct_file=$3
+  local spinstr='\|/-'
+  printf "\033[?25l" # Hide cursor
+  while kill -0 "$pid" 2>/dev/null; do
+    local temp=${spinstr#?}
+    local pct="  0"
+    if [[ -f "$pct_file" ]]; then
+      pct=$(cat "$pct_file" 2>/dev/null || echo "  0")
+    fi
+    printf "\r\033[K ${CYAN}[%c]${RESET} [%3d%%] ${DIM}%s${RESET}" "$spinstr" "$pct" "$msg"
+    local spinstr=$temp${spinstr%"$temp"}
+    sleep 0.1
+  done
+  local exit_status=0
+  wait "$pid" || exit_status=$?
+  if [ $exit_status -eq 0 ]; then
+    printf "\r\033[K ${GREEN}[OK]${RESET} %s\n" "$msg"
+  else
+    printf "\r\033[K ${RED}[ERR]${RESET} %s\n" "$msg"
+  fi
+  printf "\033[?25h" # Restore cursor
+  return $exit_status
+}
+
 download_with_progress() {
   local url=$1
   local dest=$2
@@ -201,29 +228,20 @@ command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 
 if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
-  printf "\033[?25l" # Hide cursor
+  echo "0" > "${TMP}.pct"
   {
-    pkg install -y glibc-repo -o APT::Status-Fd=1 2>/dev/null || true
-    pkg install -y glibc -o APT::Status-Fd=1 2>/dev/null
-  } | awk -v cyan="${CYAN}" -v dim="${DIM}" -v rst="${RESET}" '
-  BEGIN { 
-    msg = "Setting up Termux glibc..."
-    printf "\r\033[K %s[..]%s [  0%%] %s%s%s", cyan, rst, dim, msg, rst
-    fflush()
-  }
-  /^dlstatus:[0-9]+:([0-9.]+):/ {
-    split($0, a, ":")
-    printf "\r\033[K %s[..]%s [%3d%%] %s%s%s", cyan, rst, int(a[3]), dim, msg, rst
-    fflush()
-  }
-  /^pmstatus:[^:]+:([0-9.]+):/ {
-    split($0, a, ":")
-    printf "\r\033[K %s[..]%s [%3d%%] %s%s%s", cyan, rst, int(a[3]), dim, msg, rst
-    fflush()
-  }
-  '
-  printf "\r\033[K"
-  printf "\033[?25h" # Restore cursor
+    {
+      pkg install -y glibc-repo -o APT::Status-Fd=1 2>/dev/null || true
+      pkg install -y glibc -o APT::Status-Fd=1 2>/dev/null
+    } | awk '
+      /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
+        split($0, a, ":")
+        print int(a[3]) > "'"${TMP}.pct"'"
+        fflush()
+      }'
+  } &
+  progress_spinner $! "Setting up Termux glibc environment..." "${TMP}.pct" || true
+  rm -f "${TMP}.pct"
   
   if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
     die "Failed to install Termux glibc."
