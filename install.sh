@@ -38,13 +38,19 @@ fi
 # ── Helpers ───────────────────────────────────────────────────────────────────
 info()    { printf '%b\n' " ${CYAN}[..]${RESET} ${DIM}$*${RESET}"; }
 ok()      { printf '%b\n' " ${GREEN}[OK]${RESET} $*"; }
-die()     {
+die() {
+  {
     printf "\033[?25h" # Restore cursor
-    printf '\n%b\n' " ${RED}[ERR]${RESET} things got failed or canceled." >&2
-    printf "For manual patching and installation:\n" >&2
-    printf "${CYAN}https://gist.github.com/Brajesh2022/e42160d29b55417db6c18c52dd1d6d37${RESET}\n\n" >&2
-    exit 1
-  }
+    if [[ $# -gt 0 ]]; then
+      printf '\n%b\n' " ${RED}[ERR]${RESET} $*"
+    else
+      printf '\n%b\n' " ${RED}[ERR]${RESET} things got failed or canceled."
+    fi
+    printf "For manual patching and installation:\n"
+    printf "${CYAN}https://gist.github.com/Brajesh2022/e42160d29b55417db6c18c52dd1d6d37${RESET}\n\n"
+  } >&2
+  exit 1
+}
 divider() { printf '%b\n' "${DIM}────────────────────────────────────────${RESET}"; }
 
 spinner() {
@@ -198,7 +204,7 @@ if [[ -e "$INSTALL_DIR" ]]; then
   info "Removing previous installation..."
   rm -rf "$INSTALL_DIR"
 fi
-mkdir -p "$INSTALL_DIR" "$(dirname "$TMP")"
+mkdir -p "$INSTALL_DIR" "$(dirname "$TMP")" 2>/dev/null
 
 # ── Download ──────────────────────────────────────────────────────────────────
 download_with_progress "$URL" "$TMP" || die
