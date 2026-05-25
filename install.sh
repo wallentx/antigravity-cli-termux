@@ -283,13 +283,6 @@ ok "Binary found"
 VERSION=""
 if VERSION=$("$INSTALL_DIR/bin/agy" --version 2>/dev/null); then
   ok "Engine online ($VERSION verified)"
-elif VERSION=$("$INSTALL_DIR/bin/agy.va39" --version 2>/dev/null); then
-  info "Standard binary failed (e.g., Bus Error). Auto-fixing with va39 patch..."
-  ok "Engine online ($VERSION verified via va39)"
-  
-  # Swap the binaries so 'agy' executes the patched version seamlessly
-  mv "$INSTALL_DIR/bin/agy" "$INSTALL_DIR/bin/agy.broken"
-  mv "$INSTALL_DIR/bin/agy.va39" "$INSTALL_DIR/bin/agy"
 else
   rm -rf "$INSTALL_DIR"
   die "Binaries failed to execute locally. Check dependencies."
