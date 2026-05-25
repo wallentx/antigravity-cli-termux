@@ -201,11 +201,33 @@ command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 
 if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
+  printf "\033[?25l" # Hide cursor
   {
-    pkg install -y glibc-repo >/dev/null 2>&1 || true
-    pkg install -y glibc >/dev/null 2>&1
-  } &
-  spinner $! "Setting up Termux glibc environment..." || die "Failed to install Termux glibc."
+    pkg install -y glibc-repo -o APT::Status-Fd=1 2>/dev/null || true
+    pkg install -y glibc -o APT::Status-Fd=1 2>/dev/null
+  } | awk -v cyan="${CYAN}" -v dim="${DIM}" -v rst="${RESET}" '
+  BEGIN { 
+    msg = "Setting up Termux glibc..."
+    printf "\r\033[K %s[..]%s [  0%%] %s%s%s", cyan, rst, dim, msg, rst
+    fflush()
+  }
+  /^dlstatus:[0-9]+:([0-9.]+):/ {
+    split($0, a, ":")
+    printf "\r\033[K %s[..]%s [%3d%%] %s%s%s", cyan, rst, int(a[3]), dim, msg, rst
+    fflush()
+  }
+  /^pmstatus:[^:]+:([0-9.]+):/ {
+    split($0, a, ":")
+    printf "\r\033[K %s[..]%s [%3d%%] %s%s%s", cyan, rst, int(a[3]), dim, msg, rst
+    fflush()
+  }
+  '
+  printf "\r\033[K"
+  printf "\033[?25h" # Restore cursor
+  
+  if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
+    die "Failed to install Termux glibc."
+  fi
 fi
 
 ok "Environment: Termux aarch64"
