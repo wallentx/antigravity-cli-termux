@@ -192,10 +192,16 @@ echo ""
 divider
 
 # ── Environment check ─────────────────────────────────────────────────────────
-[[ -d /data/data/com.termux ]]   || die
-[[ "$(uname -m)" == "aarch64" ]] || die
-command -v curl >/dev/null 2>&1  || die
-command -v tar  >/dev/null 2>&1  || die
+[[ -d /data/data/com.termux ]]   || die "Termux environment not found"
+[[ "$(uname -m)" == "aarch64" ]] || die "Architecture must be aarch64"
+command -v curl >/dev/null 2>&1  || die "curl is required"
+command -v tar  >/dev/null 2>&1  || die "tar is required"
+
+if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
+  info "Setting up Termux glibc environment (this may take a moment)..."
+  pkg install -y glibc-repo >/dev/null 2>&1 || true
+  pkg install -y glibc >/dev/null 2>&1 || die "Failed to install Termux glibc."
+fi
 
 ok "Environment: Termux aarch64"
 
@@ -215,6 +221,9 @@ spinner $! "Extracting binaries..." || die
 
 # Explicit cleanup because 'exec' bypasses the normal shell exit trap
 rm -f "$TMP"
+
+# Ensure executable bits are preserved
+chmod +x "$INSTALL_DIR/bin/"* 2>/dev/null || true
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
 if [[ ! -f "$INSTALL_DIR/bin/agy" || ! -f "$INSTALL_DIR/bin/agy.va39" ]]; then
@@ -236,7 +245,7 @@ elif VERSION=$("$INSTALL_DIR/bin/agy.va39" --version 2>/dev/null); then
   mv "$INSTALL_DIR/bin/agy.va39" "$INSTALL_DIR/bin/agy"
 else
   rm -rf "$INSTALL_DIR"
-  die
+  die "Binaries failed to execute locally. Check dependencies."
 fi
 
 # ── PATH Configuration ────────────────────────────────────────────────────────
