@@ -201,9 +201,11 @@ command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 
 if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
-  info "Setting up Termux glibc environment (this may take a moment)..."
-  pkg install -y glibc-repo >/dev/null 2>&1 || true
-  pkg install -y glibc >/dev/null 2>&1 || die "Failed to install Termux glibc."
+  {
+    pkg install -y glibc-repo >/dev/null 2>&1 || true
+    pkg install -y glibc >/dev/null 2>&1
+  } &
+  spinner $! "Setting up Termux glibc environment..." || die "Failed to install Termux glibc."
 fi
 
 ok "Environment: Termux aarch64"
