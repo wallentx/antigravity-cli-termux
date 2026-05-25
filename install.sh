@@ -7,6 +7,9 @@ URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standa
 INSTALL_DIR="${HOME}/.local/agy"
 TMP="${HOME}/.local/.agy-install.tar.gz"
 
+# Ensure base directories exist for fresh setups
+mkdir -p "${HOME}/.local" 2>/dev/null || true
+
 # ── Cleanup Hook ──────────────────────────────────────────────────────────────
 cleanup() {
   printf "\033[?25h" # Restore cursor if cancelled
