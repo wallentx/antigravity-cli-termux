@@ -88,7 +88,7 @@ progress_spinner() {
     local temp=${spinstr#?}
     local pct="  0"
     if [[ -f "$pct_file" ]]; then
-      pct=$(cat "$pct_file" 2>/dev/null || echo "  0")
+      pct=$(tail -n 1 "$pct_file" 2>/dev/null || echo "  0")
     fi
     printf "\r\033[K ${CYAN}[%c]${RESET} [%3d%%] ${DIM}%s${RESET}" "$spinstr" "$pct" "$msg"
     local spinstr=$temp${spinstr%"$temp"}
@@ -237,6 +237,7 @@ if [[ ! -d /data/data/com.termux/files/usr/glibc ]]; then
       /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
         split($0, a, ":")
         print int(a[3]) > "'"${TMP}.pct"'"
+        close("'"${TMP}.pct"'")
         fflush()
       }'
   } &
