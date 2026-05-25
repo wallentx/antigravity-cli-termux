@@ -1,5 +1,4 @@
 # Antigravity CLI
-
 > [!NOTE]
 > **Community Acknowledgement:** Much of the core binary patching and VA39 memory layout engineering implemented in this Termux fork is built upon the foundational work and discoveries of [@hjotha](https://github.com/hjotha) and [@Brajesh2022](https://github.com/Brajesh2022). Deep appreciation to the community for unlocking compatibility!
 
@@ -8,6 +7,8 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
 ```
+
+![Antigravity CLI Demo](https://raw.githubusercontent.com/Brajesh2022/antigravity-cli-termux/dev/antigravity.gif)
 
 ## 📱 Termux Standalone Port & Architecture
 
