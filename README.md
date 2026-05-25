@@ -8,7 +8,7 @@
 curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
 ```
 
-![Antigravity CLI Demo](https://raw.githubusercontent.com/Brajesh2022/antigravity-cli-termux/dev/antigravity.gif)
+![Antigravity CLI Demo](antigravity.gif)
 
 ## 📱 Termux Standalone Port & Architecture
 

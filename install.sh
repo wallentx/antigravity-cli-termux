@@ -14,6 +14,7 @@ mkdir -p "${HOME}/.local" 2>/dev/null || true
 cleanup() {
   printf "\033[?25h" # Restore cursor if cancelled
   [[ -f "$TMP" ]] && rm -f "$TMP"
+  [[ -n "$TMP_LOGO" && -f "$TMP_LOGO" ]] && rm -f "$TMP_LOGO"
 }
 
 handle_cancel() {
@@ -25,7 +26,7 @@ trap cleanup EXIT
 trap handle_cancel INT TERM
 
 # ── Colors ────────────────────────────────────────────────────────────────────
-if [[ -t 1 || -c /dev/tty ]]; then
+if [[ -t 1 ]]; then
   BOLD="\033[1m"
   DIM="\033[2m"
   GREEN="\033[32m"
@@ -178,7 +179,7 @@ download_with_progress() {
 
 # ── Header ────────────────────────────────────────────────────────────────────
 echo ""
-TMP_LOGO="${HOME}/.local/.agy-logo.ans"
+TMP_LOGO=$(mktemp 2>/dev/null || echo "${HOME}/.local/.agy-logo.ans")
 
 if { curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/${REPO}/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null || curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Brajesh2022/antigravity-cli-termux/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null; } && [[ -s "$TMP_LOGO" ]]; then
   
@@ -276,7 +277,7 @@ if [[ ! -f "$INSTALL_DIR/bin/agy" || ! -f "$INSTALL_DIR/bin/agy.va39" ]]; then
   rm -rf "$INSTALL_DIR"
   die
 fi
-ok "Binary integrity verified"
+ok "Binary found"
 
 # ── Test & Extract Version ────────────────────────────────────────────────────
 VERSION=""
