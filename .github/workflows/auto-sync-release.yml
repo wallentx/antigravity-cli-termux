@@ -139,20 +139,13 @@ jobs:
           NDK_CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
           $NDK_CC -O2 -o bin/agy lib/agy_helper.c
 
-      # 7. Stage local glibc runtime symlinks
-      - name: Stage Runtime Library Symlinks
-        if: steps.check_version.outputs.build_needed == 'true'
-        run: |
-          ln -sfn /data/data/com.termux/files/usr/glibc/lib/libc.so.6 lib/libc.so
-          ln -sfn /data/data/com.termux/files/usr/glibc/lib/libc.so.6 lib/libc.so.6
-
-      # 8. Compress relocatable output files
+      # 7. Compress relocatable output files
       - name: Package Standalone Archive
         if: steps.check_version.outputs.build_needed == 'true'
         run: |
-          tar -czf antigravity-termux-standalone.tar.gz bin/ lib/
+          tar -czf antigravity-termux-standalone.tar.gz bin/
 
-      # 9. Cryptographically sign build provenance via Sigstore
+      # 8. Cryptographically sign build provenance via Sigstore
       - name: Attest Artifacts
         uses: actions/attest-build-provenance@v4
         if: steps.check_version.outputs.build_needed == 'true'
