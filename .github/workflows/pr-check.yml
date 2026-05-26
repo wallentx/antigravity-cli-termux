@@ -1,0 +1,85 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  validate:
+    name: Lint, Compile and Build Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+          include-packages: |
+            cppcheck
+
+      - name: Run C Static Analysis
+        run: |
+          echo "Running cppcheck static analysis on C source files..."
+          cppcheck --enable=all --error-exitcode=1 lib/
+
+      - name: Strict C Compiler Diagnostic Check
+        run: |
+          echo "Verifying standalone C compilation under strict warning flags..."
+          mkdir -p bin
+
+          echo "Compiling core bootstrapper..."
+          gcc -Wall -Wextra -Werror -Wpedantic -Wshadow -Wformat=2 -O2 -o bin/agy lib/agy_helper.c
+          for source in lib/*.c; do
+            [[ -e "$source" ]] || continue
+            [[ "$source" == "lib/agy_helper.c" ]] && continue
+
+            base_name=$(basename "$source" .c)
+            echo "Auxiliary C library detected: $source. Verifying compilation as shared object..."
+            mkdir -p lib
+            gcc -Wall -Wextra -Werror -Wpedantic -Wshadow -Wformat=2 -O2 -fPIC -shared -o "lib/lib${base_name}.so" "$source" -ldl
+          done
+
+      - name: End-to-End Build Integration Test
+        run: |
+          echo "Running build.sh builder integration test..."
+          ./build.sh
+
+      - name: Package Standalone Archive
+        run: |
+          echo "Packaging standalone release archive (bin/ footprint only)..."
+          tar -czf antigravity-termux-standalone.tar.gz bin/
+
+      - name: Assert Archive Integrity & Layout
+        run: |
+          if [[ ! -f antigravity-termux-standalone.tar.gz ]]; then
+            echo "Error: Release archive antigravity-termux-standalone.tar.gz was not generated." >&2
+            exit 1
+          fi
+
+          echo "Verifying archive contents..."
+          tar -tf antigravity-termux-standalone.tar.gz
+
+          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^bin/agy$' || (echo "Error: Missing bin/agy in release archive!" && exit 1)
+          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^bin/agy\.va39$' || (echo "Error: Missing bin/agy.va39 in release archive!" && exit 1)
+
+          echo "Archive validation passed successfully! Footprint is clean."
+
+      - name: Upload Standalone Tarball Preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigravity-termux-standalone-preview
+          path: antigravity-termux-standalone.tar.gz
+          if-no-files-found: error
