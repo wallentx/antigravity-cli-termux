@@ -75,7 +75,7 @@ void check_and_perform_update(const char *dir) {
     if (strcmp(clean_latest, clean_current) != 0) {
         printf("\n[agy-termux] A new update (v%s) is available!\n", clean_latest);
         printf("[agy-termux] Would you like to update now? [y/N]: ");
-        fflush(stdout);
+        (void)fflush(stdout);
 
         char response = 'n';
         char response_line[8] = {0};
