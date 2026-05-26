@@ -1,0 +1,19 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-identifier-length,
+  -readability-magic-numbers
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+FormatStyle: file

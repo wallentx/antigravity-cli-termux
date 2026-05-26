@@ -65,7 +65,16 @@ jobs:
       - name: Package Standalone Archive
         if: steps.check_version.outputs.build_needed == 'true'
         run: |
+          echo "Packaging standalone release archive (bin/ footprint only)..."
           tar -czf antigravity-termux-standalone.tar.gz bin/
+
+      - name: Upload Standalone Archive to Run Artifacts
+        if: steps.check_version.outputs.build_needed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: antigravity-termux-standalone-${{ steps.check_version.outputs.version }}
+          path: antigravity-termux-standalone.tar.gz
+          if-no-files-found: error
 
       - name: Attest Artifacts
         uses: actions/attest-build-provenance@v4
@@ -96,3 +105,33 @@ jobs:
             --title "Antigravity CLI Termux Standalone v$VERSION" \
             --notes-file staging/release-notes.md \
             antigravity-termux-standalone.tar.gz
+
+      - name: Post Run Summary
+        if: steps.check_version.outputs.build_needed == 'true'
+        run: |
+          {
+            echo "### 🚀 Antigravity CLI Standalone Release Build Summary"
+            echo ""
+            echo "#### 📦 Built Standalone Archive Details"
+            echo "| Property | Value |"
+            echo "| --- | --- |"
+            echo "| **Archive Name** | \`antigravity-termux-standalone.tar.gz\` |"
+
+            FILE_SIZE=$(du -h antigravity-termux-standalone.tar.gz | cut -f1)
+            echo "| **File Size** | $FILE_SIZE |"
+
+            SHA_HASH=$(sha256sum antigravity-termux-standalone.tar.gz | cut -d' ' -f1)
+            echo "| **SHA-256 Checksum** | \`$SHA_HASH\` |"
+            echo ""
+
+            echo "#### 📥 Download Links"
+            echo "* 🔗 [Download from GHA Run Artifacts](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (Located at the bottom of the run page)"
+            if [[ "${{ github.event.inputs.dry_run }}" != "true" ]]; then
+              echo "* 📦 [Download from GitHub Releases](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.check_version.outputs.version }})"
+            fi
+            echo ""
+
+            echo "#### 📝 Generated Release Notes"
+            echo "---"
+            cat staging/release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
