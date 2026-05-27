@@ -212,9 +212,11 @@ if not so_path.exists():
 so_data = so_path.read_bytes()
 hex_bytes = ", ".join(f"0x{b:02x}" for b in so_data)
 pathlib.Path("lib/mmap_va39_fix_bytes.h").write_text(
+    "// clang-format off\n"
     "#include <stddef.h>\n"
     f"static const unsigned char mmap_va39_fix_so[] = {{ {hex_bytes} }};\n"
     f"static const size_t mmap_va39_fix_so_len = {len(so_data)};\n"
+    "// clang-format on\n"
 )
 '
 
