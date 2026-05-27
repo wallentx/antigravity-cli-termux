@@ -1,13 +1,42 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
 REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
-TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
-TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
-EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
+
+# ── Environment Detection ─────────────────────────────────────────────────────
+tp=$(awk '/^TracerPid:/ {print $2}' /proc/self/status 2>/dev/null || echo 0)
+tn=""
+if [[ "$tp" -gt 0 ]]; then
+  tn=$(awk '/^Name:/ {print $2}' "/proc/$tp/status" 2>/dev/null || cat "/proc/$tp/comm" 2>/dev/null || true)
+fi
+
+ENV_TYPE="unknown"
+case "$tn" in
+  proot|proot-*|proot_*) ENV_TYPE="proot" ;;
+  *)
+    if [[ -n "${TERMUX_VERSION:-}" ]]; then
+      ENV_TYPE="termux"
+    fi
+    ;;
+esac
+
+if [[ "$ENV_TYPE" == "unknown" ]]; then
+  printf "\033[31m[ERR]\033[0m This install script is exclusively designed for native Termux or Termux PRoot distro environments.\n" >&2
+  exit 1
+fi
+
+if [[ "$ENV_TYPE" == "termux" ]]; then
+  TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+  INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
+  TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
+  EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
+else
+  INSTALL_BIN_DIR="$HOME/.local/bin"
+  TMP="${TMPDIR:-/tmp}/antigravity-termux-standalone.tar.gz"
+  EXTRACT_DIR="${TMPDIR:-/tmp}/.agy-extract"
+fi
 INSTALL_SUCCESS=0
 
 # Ensure base directories exist for fresh setups
@@ -120,58 +149,58 @@ progress_spinner() {
 download_with_progress() {
   local url=$1
   local dest=$2
-  
+
   printf "\033[?25l" # Hide cursor
 
   local total_size=""
   if head_out=$(curl -sLI -H "Cache-Control: no-cache" "$url" 2>/dev/null); then
     total_size=$(echo "$head_out" | awk 'BEGIN{IGNORECASE=1} /^content-length:/{print $2}' | tail -n1 | tr -d '\r')
   fi
-  
+
   if [[ ! "$total_size" =~ ^[0-9]+$ ]]; then
     curl -fLs -H "Cache-Control: no-cache" "$url" -o "$dest" >/dev/null 2>&1 &
     spinner $! "Downloading payload..."
     return $?
   fi
-  
+
   local cols
   cols=$(tput cols </dev/tty 2>/dev/null || echo 60)
-  
+
   local w=$(( cols - 38 ))
   (( w > 60 )) && w=60
   (( w < 10 )) && w=10
 
   curl -fLs -H "Cache-Control: no-cache" "$url" -o "$dest" >/dev/null 2>&1 &
   local pid=$!
-  
+
   while kill -0 "$pid" 2>/dev/null; do
     local current_size=0
     if [[ -f "$dest" ]]; then
       current_size=$(wc -c < "$dest" 2>/dev/null || echo 0)
     fi
-    
+
     awk -v c="$current_size" -v t="$total_size" -v cyan="$CYAN" -v dim="$DIM" -v rst="$RESET" -v width="$w" '
     BEGIN {
       pct = (t > 0) ? (c / t) * 100 : 0
       if (pct > 100) pct = 100
       filled = int((pct / 100) * width)
       empty = width - filled
-      
+
       bar = ""
       for (i=0; i<filled; i++) bar = bar "█"
       for (i=0; i<empty; i++) bar = bar "░"
-      
+
       c_mb = c / 1048576
       t_mb = t / 1048576
-      
+
       printf "\r\033[K %s[..]%s [%s] %3d%% %s%5.1fM / %4.1fM%s", cyan, rst, bar, pct, dim, c_mb, t_mb, rst
     }'
     sleep 0.15
   done
-  
+
   local exit_status=0
   wait "$pid" || exit_status=$?
-  
+
   if [ $exit_status -eq 0 ]; then
     awk -v t="$total_size" -v grn="$GREEN" -v dim="$DIM" -v rst="$RESET" -v width="$w" '
     BEGIN {
@@ -183,7 +212,7 @@ download_with_progress() {
   else
     printf "\r\033[K %b[ERR]%b Download failed.\n" "$RED" "$RESET"
   fi
-  
+
   printf "\033[?25h" # Restore cursor
   return $exit_status
 }
@@ -193,15 +222,15 @@ echo ""
 TMP_LOGO=$(mktemp 2>/dev/null || echo "${HOME}/.local/.agy-logo.ans")
 
 if { curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/${REPO}/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null || curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Brajesh2022/antigravity-cli-termux/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null; } && [[ -s "$TMP_LOGO" ]]; then
-  
+
   COLS=$(tput cols </dev/tty 2>/dev/null || echo 60)
-  
+
   awk -v cols="$COLS" -v arch="$(uname -m)" -v bold="${BOLD}${CYAN}" -v dim="${DIM}" -v grn="${GREEN}" -v rst="${RESET}" '
   {
-    sub(/\r$/, ""); 
-    
+    sub(/\r$/, "");
+
     if (cols >= 48) {
-      printf "%s", $0; 
+      printf "%s", $0;
       if (NR == 3)      printf "\033[28G %sAntigravity Termux%s", bold, rst;
       else if (NR == 4) printf "\033[28G %sStandalone Installer%s", dim, rst;
       else if (NR == 5) printf "\033[28G %s────────────────────%s", dim, rst;
@@ -224,7 +253,7 @@ if { curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/$
       printf "  %sStatus:%s  %sOnline%s\n", dim, rst, grn, rst;
     }
   }' "$TMP_LOGO"
-  
+
   rm -f "$TMP_LOGO"
 else
   printf "  %bAntigravity Termux%b\n" "${BOLD}${CYAN}" "${RESET}"
@@ -234,42 +263,63 @@ echo ""
 divider
 
 # ── Environment check ─────────────────────────────────────────────────────────
-[[ -d /data/data/com.termux ]]   || die "Termux environment not found"
 [[ "$(uname -m)" == "aarch64" ]] || die "Architecture must be aarch64"
 command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
-command -v pkg  >/dev/null 2>&1  || die "pkg is required"
 
-if [[ ! -d "${TERMUX_PREFIX}/glibc" ]]; then
-  GLIBC_LOG="${TMP}.glibc.log"
-  GLIBC_PCT="${TMP}.pct"
-  echo "0" > "$GLIBC_PCT"
-  {
-    {
-      pkg install -y glibc-repo -o APT::Status-Fd=1 || true
-      pkg install -y glibc -o APT::Status-Fd=1
-    } 2>&1 | tee -a "$GLIBC_LOG" | awk '
-      /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
-        split($0, a, ":")
-        pct = int(a[3])
-        if (pct < 0) pct = 0
-        if (pct > 100) pct = 100
-        print pct > "'"${GLIBC_PCT}"'"
-        close("'"${GLIBC_PCT}"'")
-        fflush()
-      }'
-  } &
-  progress_spinner $! "Setting up Termux glibc environment..." "$GLIBC_PCT" || true
-  rm -f "$GLIBC_PCT"
-  
-  if [[ ! -d "${TERMUX_PREFIX}/glibc" ]]; then
-    [[ -f "$GLIBC_LOG" ]] && tail -n 30 "$GLIBC_LOG" >&2
-    die "Failed to install Termux glibc. Check internet and run: pkg update && pkg install -y glibc-repo glibc"
+check_glibc() {
+  if [[ "$ENV_TYPE" == "termux" ]]; then
+    [[ -d "${TERMUX_PREFIX}/glibc" ]]
+  else
+    ldd --version 2>&1 | grep -qi -E '(glibc|gnu libc)'
   fi
-  rm -f "$GLIBC_LOG"
+}
+
+if ! check_glibc; then
+  if [[ "$ENV_TYPE" == "termux" ]]; then
+    command -v pkg >/dev/null 2>&1 || die "pkg is required to install glibc"
+
+    printf "\n  %b[!]%b The glibc package is required but not installed.\n" "$RED" "$RESET"
+    printf "  Would you like to install it now via pkg? [Y/n]: "
+    read -r -n 1 ans < /dev/tty || ans="n"
+    printf "\n"
+
+    if [[ "$ans" =~ ^[Yy]$ ]] || [[ -z "$ans" ]]; then
+      GLIBC_LOG="${TMP}.glibc.log"
+      GLIBC_PCT="${TMP}.pct"
+      echo "0" > "$GLIBC_PCT"
+      {
+        {
+          pkg install -y glibc-repo -o APT::Status-Fd=1 || true
+          pkg install -y glibc -o APT::Status-Fd=1
+        } 2>&1 | tee -a "$GLIBC_LOG" | awk '
+          /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
+            split($0, a, ":")
+            pct = int(a[3])
+            if (pct < 0) pct = 0
+            if (pct > 100) pct = 100
+            print pct > "'"${GLIBC_PCT}"'"
+            close("'"${GLIBC_PCT}"'")
+            fflush()
+          }'
+      } &
+      progress_spinner $! "Setting up Termux glibc environment..." "$GLIBC_PCT" || true
+      rm -f "$GLIBC_PCT"
+
+      if ! check_glibc; then
+        [[ -f "$GLIBC_LOG" ]] && tail -n 30 "$GLIBC_LOG" >&2
+        die "Failed to install Termux glibc. Please install manually: pkg update && pkg install -y glibc-repo glibc"
+      fi
+      rm -f "$GLIBC_LOG"
+    else
+      die "glibc is required to proceed. Please install it manually."
+    fi
+  else
+    die "glibc is required but not found. Please install glibc using your distribution's package manager."
+  fi
 fi
 
-ok "Environment: Termux aarch64"
+ok "Environment: ${ENV_TYPE} (aarch64)"
 
 # ── Clean previous install ────────────────────────────────────────────────────
 mkdir -p "$INSTALL_BIN_DIR" "$(dirname "$TMP")" 2>/dev/null
@@ -294,12 +344,9 @@ if [[ -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
   mv -f "$INSTALL_BIN_DIR/agy.va39" "$AGY_VA39_BAK" || die "Failed to back up existing agy.va39 binary from $INSTALL_BIN_DIR"
 fi
 
-mv -f "$EXTRACT_DIR/bin/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to move agy binary to $INSTALL_BIN_DIR"
-mv -f "$EXTRACT_DIR/bin/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to move agy.va39 binary to $INSTALL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/bin/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to install agy binary to $INSTALL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/bin/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
 rm -rf "$EXTRACT_DIR"
-
-# Ensure executable bits are preserved
-chmod +x "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39" 2>/dev/null || true
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
 if [[ ! -f "$INSTALL_BIN_DIR/agy" || ! -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
@@ -325,14 +372,26 @@ divider
 info "Installed binaries to: ${BOLD}${INSTALL_BIN_DIR}${RESET}"
 info "Release archive kept at: ${BOLD}${TMP}${RESET}"
 info "Optional verification:"
-info "${BOLD}cd ${TERMUX_PREFIX}/tmp && gh attestation verify antigravity-termux-standalone.tar.gz --owner wallentx${RESET}"
+info "${BOLD}cd $(dirname "$TMP") && gh attestation verify antigravity-termux-standalone.tar.gz --owner wallentx${RESET}"
 printf '\n'
+
+case ":$PATH:" in
+  *":$INSTALL_BIN_DIR:"*) ;;
+  *)
+    cat >&2 <<EOF
+${RED}${BOLD}Warning:${RESET} ${BOLD}$INSTALL_BIN_DIR${RESET} is not in PATH for this shell.
+Please add this to your shell profile (e.g., ~/.bashrc or ~/.zshrc):
+
+  export PATH="$INSTALL_BIN_DIR:\$PATH"
+
+EOF
+    ;;
+esac
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 info "Launching Antigravity CLI..."
 
 export PATH="$INSTALL_BIN_DIR:$PATH"
-clear
 INSTALL_SUCCESS=1
 cleanup
 exec "$INSTALL_BIN_DIR/agy"
