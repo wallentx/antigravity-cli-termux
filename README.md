@@ -21,27 +21,34 @@ Every 6 hours, a GitHub Actions workflow performs the following engineering pipe
 ```mermaid
 graph TD
     A[Upstream Release Detected] --> B[Download Linux arm64 Binary]
-    B --> C[Apply VA39 Structural Memory Allocation Patches]
-    C --> D[Cross-Compile Native Bionic C Bootstrapper]
+    B --> C[Apply VA39 Memory Alignment Patches]
+    C --> D[Cross-Compile Native C Bootstrapper with Embedded Interposer]
     D --> E[Package Relocatable Standalone Tarball]
     E --> F[Cryptographically Sign Build via Sigstore OIDC]
 ```
 
 #### 1. VA39 Memory Layout Patching (TCMalloc)
-Upstream utilizes Google's `TCMalloc`, which assumes a standard 48-bit Virtual Address (VA) space. On Android devices with custom kernels or older configurations, the user space utilizes a 39-bit VA space. Running the unmodified binary results in segmentation faults or fatal allocation failures. 
-We run a dedicated Python patching process that:
-* Rewrites specific bitmask and `ubfx` (unsigned bitfield extract) instructions.
-* Adjusts page-alignment logic and `mmap` parameters.
-* Rewrites low-level library wrappers (`faccessat2`) to guarantee absolute compatibility with 39-bit systems.
+Upstream utilizes Google's `TCMalloc`, which assumes a standard 48-bit Virtual Address (VA) space. On Android devices with custom kernels or older configurations, the user space is restricted to a 39-bit VA space. Running the unmodified binary results in segmentation faults or fatal allocation failures (`MmapAligned() failed`).
+A dedicated Python patching process is executed during the build to:
+* Rewrite specific bitmask and `ubfx` (unsigned bitfield extract) instructions.
+* Adjust page-alignment logic and `mmap` parameters.
+* Rewrite low-level library wrappers (`faccessat2`) to guarantee absolute compatibility with 39-bit systems.
 
-#### 2. Relocatable Bionic C Bootstrapper
-Standard Termux runs under the Android Bionic libc environment, injecting specific preloads (`LD_PRELOAD=/data/.../libtermux-exec.so`) to intercept calls. However, because our patched binary is built under glibc, loading it directly causes immediate crashes (`invalid ELF header`) when the glibc dynamic linker processes Bionic preloads.
-To circumvent this, we compile a native Bionic C bootstrapper (`bin/agy`):
-* **Dynamic Resolution:** Resolves its own folder at runtime using `/proc/self/exe` via `readlink`, enabling the package to be extracted and executed in *any* directory without wrappers.
-* **Environment Cleansing:** Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
-* **Redirection:** Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
+#### 2. Relocatable C Bootstrapper
+Standard Termux runs under the Android Bionic libc environment, injecting specific preloads (`LD_PRELOAD=/data/.../libtermux-exec.so`) to intercept calls. However, because the patched binary is built under glibc, loading it directly causes immediate crashes (`invalid ELF header`) when the glibc dynamic linker processes Bionic preloads.
+To circumvent this, a relocatable C bootstrapper (`bin/agy`) is compiled:
+* **Dynamic Resolution**: Resolves its own folder at runtime using `/proc/self/exe` via `readlink`, enabling the package to be extracted and executed in *any* directory without wrapper scripts.
+* **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
+* **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
 
-#### 3. In-Place Self-Updating
+#### 3. Chroot & Proot Compatibility (Dynamic Interposer)
+When running inside a non-native Termux environment (e.g., an Ubuntu/Debian chroot on Android), memory allocation limits can trigger immediate TCMalloc crashes due to the 39-bit VA kernel boundaries.
+To resolve this, a runtime **Memory Interposer** architecture is implemented:
+* **Embedded Interposer**: A dynamic shared library (`libmmap_va39_fix.so`) intercepts `mmap` calls at runtime and redirects memory allocation requests above the 39-bit limit to safe address ranges.
+* **Just-in-Time Unpacking**: To keep the standalone release footprint restricted strictly to the `bin/` directory, the interposer library is embedded as a raw byte array directly inside the `bin/agy` executable. At runtime, the bootstrapper automatically extracts the `.so` to a writable temp directory (`$TMPDIR` -> `/tmp`) and preloads it on the fly.
+* *For more details, see the technical reference at [docs/UBUNTU_CHROOT_COMPAT.md](docs/UBUNTU_CHROOT_COMPAT.md).*
+
+#### 4. In-Place Self-Updating
 The C bootstrapper intercepts the `update` subcommand and queries this fork's GitHub Releases API, providing a seamless in-place update mechanism that updates both the patched engine and itself without needing complex wrappers or manually executing curl commands.
 
 ---
