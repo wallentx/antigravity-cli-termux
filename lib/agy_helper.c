@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
                            "%s/../lib:/data/data/com.termux/files/usr/glibc/lib", dir);
     } else {
         written = snprintf(lib_path, sizeof(lib_path),
-                           "%s/../lib:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu", dir);
+                           "%s/../lib:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/lib64:/usr/lib64:/lib:/usr/lib", dir);
     }
     if (written < 0 || written >= (int)sizeof(lib_path)) {
         return 1;

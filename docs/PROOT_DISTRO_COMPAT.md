@@ -1,7 +1,7 @@
 # PRoot Distro and 39-Bit Virtual Address Space Compatibility
 
 ## Purpose
-This document explains the runtime interposer and environment-aware bootstrapper architecture implemented to support executing the Antigravity CLI within non-native Termux environments (e.g., Ubuntu/Debian PRoot distros on Android).
+This document explains the runtime interposer and environment-aware bootstrapper architecture implemented to support executing the Antigravity CLI within non-native Termux environments (e.g., guest PRoot/Chroot distributions on Android).
 
 ## Problem: 39-Bit Virtual Address Space Limits
 The upstream dynamic binary utilizes Google's `TCMalloc` allocator, which assumes a standard 48-bit Virtual Address (VA) space.
@@ -25,6 +25,6 @@ To keep the release archive restricted strictly to the `bin/` directory, the int
 
 ### 3. Just-In-Time Extraction & Preloading (`lib/agy_helper.c`)
 At runtime, the bootstrapper `bin/agy` executes the following sequence:
-1. **Environment Detection**: Detects if execution is running natively inside Termux or within a PRoot distro (such as Ubuntu).
-2. **Dynamic Unpacking**: If running in a PRoot distro, the bootstrapper extracts the embedded `.so` bytes from memory to a writable temporary directory (prioritizing `$TMPDIR` before falling back to `/tmp`). Writing is skipped if the file already exists with matching size.
-3. **Preload Injection**: Appends the extracted `.so` path to the glibc loader `--preload` argument and configures relocatable library search paths (e.g., adding `/lib/aarch64-linux-gnu`) before executing `execv`.
+1. **Environment Detection**: Detects if execution is running natively inside Termux or within a guest PRoot/Chroot distribution.
+2. **Dynamic Unpacking**: If running in a guest PRoot/Chroot distribution, the bootstrapper extracts the embedded `.so` bytes from memory to a writable temporary directory (prioritizing `$TMPDIR` before falling back to `/tmp`). Writing is skipped if the file already exists with matching size.
+3. **Preload Injection**: Appends the extracted `.so` path to the glibc loader `--preload` argument and configures relocatable library search paths (e.g., dynamically adding `/lib` and `/usr/lib`) before executing `execv`.
