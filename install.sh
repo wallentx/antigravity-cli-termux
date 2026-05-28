@@ -362,8 +362,20 @@ if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
   [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
   [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
 else
-  rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
-  die "Binaries failed to execute locally. Check dependencies."
+  info "Binary failed. Attempting dependency repair..."
+  pkg reinstall -y proot glibc ca-certificates >/dev/null 2>&1 || true
+  rm -f ~/.local/bin/agy ~/.local/bin/agy.va39
+  rm -rf ~/.local/agy
+  hash -r
+  
+  if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
+    ok "Engine online ($VERSION verified)"
+    [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
+    [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
+  else
+    rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+    die "Binaries failed to execute locally. Check dependencies."
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
