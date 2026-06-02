@@ -362,29 +362,34 @@ if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
   [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
   [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
 else
-  info "Binary failed. Attempting dependency repair..."
-  pkg reinstall -y proot glibc ca-certificates >/dev/null 2>&1 || true
-  rm -f ~/.local/bin/agy ~/.local/bin/agy.va39
-  rm -rf ~/.local/agy
-  hash -r
-  
-  if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
-    ok "Engine online ($VERSION verified)"
-    [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
-    [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
-  else
-    info "Repair failed. Attempting full package update..."
-    pkg upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" >/dev/null 2>&1 || true
+  if [[ "$ENV_TYPE" == "termux" ]]; then
+    info "Binary failed. Attempting dependency repair..."
     pkg reinstall -y proot glibc ca-certificates >/dev/null 2>&1 || true
+    rm -f "$HOME/.local/bin/agy" "$HOME/.local/bin/agy.va39"
+    rm -rf "$HOME/.local/agy"
+    hash -r
     
     if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
       ok "Engine online ($VERSION verified)"
       [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
       [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
     else
-      rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
-      die "Binaries failed to execute locally. Check dependencies."
+      info "Repair failed. Attempting full package update..."
+      pkg upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" >/dev/null 2>&1 || true
+      pkg reinstall -y proot glibc ca-certificates >/dev/null 2>&1 || true
+      
+      if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
+        ok "Engine online ($VERSION verified)"
+        [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
+        [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
+      else
+        rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+        die "Binaries failed to execute locally. Check dependencies."
+      fi
     fi
+  else
+    rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+    die "Binaries failed to execute locally. Check dependencies."
   fi
 fi
 
