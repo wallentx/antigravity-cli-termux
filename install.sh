@@ -156,22 +156,23 @@ finish_ok() {
 run_pkg_with_spinner() {
   local msg="$1"
   shift
-  local pct_file="${TMP}.pct"
-  echo "0" > "$pct_file"
+  GLIBC_PCT="${TMP}.pct"
+  echo "0" > "$GLIBC_PCT"
   {
-    "$@" -o APT::Status-Fd=1 2>&1 | awk '
+    "$@" -o APT::Status-Fd=1 2>&1 | awk -v pct_file="$GLIBC_PCT" '
       /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
         split($0, a, ":")
         pct = int(a[3])
         if (pct < 0) pct = 0
         if (pct > 100) pct = 100
-        print pct > "'"${pct_file}"'"
-        close("'"${pct_file}"'")
+        print pct > pct_file
+        close(pct_file)
         fflush()
       }'
   } &
-  progress_spinner $! "$msg" "$pct_file" || true
-  rm -f "$pct_file"
+  progress_spinner $! "$msg" "$GLIBC_PCT" || true
+  rm -f "$GLIBC_PCT"
+  GLIBC_PCT=""
 }
 
 download_with_progress() {
@@ -399,7 +400,7 @@ else
       finish_ok "$VERSION"
     else
       info "Repair failed. Attempting full package update..."
-      run_pkg_with_spinner "Upgrading package definitions..." pkg upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+      run_pkg_with_spinner "Updating package definitions..." apt update
       run_pkg_with_spinner "Deep reinstalling dependencies..." pkg reinstall -y proot glibc ca-certificates
       
       if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
