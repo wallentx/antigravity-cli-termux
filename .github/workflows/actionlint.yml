@@ -2,8 +2,6 @@ name: Actionlint
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -21,8 +19,22 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify Changed Paths
+        id: path_policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./.github/scripts/changed-paths.sh
+
+      - name: Skip actionlint
+        if: ${{ steps.path_policy.outputs.actionlint != 'true' }}
+        run: echo "No workflow files changed; skipping actionlint."
 
       - name: Run actionlint
+        if: ${{ steps.path_policy.outputs.actionlint == 'true' }}
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color

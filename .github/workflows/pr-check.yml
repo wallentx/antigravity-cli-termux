@@ -24,7 +24,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Classify Changed Paths
+        id: path_policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./.github/scripts/changed-paths.sh
+
+      - name: Skip C/C++ Format and Tidy
+        if: ${{ steps.path_policy.outputs.pr_validation != 'true' }}
+        run: echo "Only CHANGELOG.md, docs/**, or examples/** changed; skipping C/C++ format and tidy."
+
       - name: Bootstrap Transient Headers for Linters
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
           python3 -c '
@@ -41,6 +53,7 @@ jobs:
           '
 
       - name: Run clang-format and clang-tidy
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         id: cpp_linter
         uses: cpp-linter/cpp-linter-action@v2
         env:
@@ -56,7 +69,7 @@ jobs:
           extra-args: '-std=gnu11'
 
       - name: Fail on clang-format or clang-tidy findings
-        if: steps.cpp_linter.outputs.checks-failed > 0
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' && steps.cpp_linter.outputs.checks-failed > 0 }}
         run: exit 1
 
   cppcheck:
@@ -73,7 +86,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Classify Changed Paths
+        id: path_policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./.github/scripts/changed-paths.sh
+
+      - name: Skip C/C++ Static Analysis
+        if: ${{ steps.path_policy.outputs.pr_validation != 'true' }}
+        run: echo "Only CHANGELOG.md, docs/**, or examples/** changed; skipping C/C++ static analysis."
+
       - name: Bootstrap Transient Headers for Linters
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
           python3 -c '
@@ -90,6 +115,7 @@ jobs:
           '
 
       - name: 🧰 Actions Toolbox
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         uses: wallentx/gh-actions/composite/actions-toolbox@main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,6 +125,7 @@ jobs:
             cppcheck
 
       - name: Run C Static Analysis
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           echo "Running cppcheck static analysis on C source files..."
           cppcheck --enable=warning,performance,portability --suppress=missingIncludeSystem --error-exitcode=1 lib/
@@ -117,7 +144,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Classify Changed Paths
+        id: path_policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./.github/scripts/changed-paths.sh
+
+      - name: Skip Strict GCC and Clang Compile
+        if: ${{ steps.path_policy.outputs.pr_validation != 'true' }}
+        run: echo "Only CHANGELOG.md, docs/**, or examples/** changed; skipping strict GCC and Clang compile."
+
       - name: Bootstrap Transient Headers for Linters
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
           python3 -c '
@@ -134,6 +173,7 @@ jobs:
           '
 
       - name: Strict C Compiler Diagnostic Check
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           echo "Verifying standalone C compilation under strict warning flags with GCC and Clang..."
           mkdir -p bin
@@ -179,17 +219,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Classify Changed Paths
+        id: path_policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./.github/scripts/changed-paths.sh
+
+      - name: Skip Build, Package, and Archive Check
+        if: ${{ steps.path_policy.outputs.pr_validation != 'true' }}
+        run: echo "Only CHANGELOG.md, docs/**, or examples/** changed; skipping build, package, and archive check."
+
       - name: End-to-End Build Integration Test
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           echo "Running build.sh builder integration test..."
           ./build.sh
 
       - name: Package Standalone Archive
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           echo "Packaging standalone release archive (bin/ footprint only)..."
           tar -czf antigravity-termux-standalone.tar.gz bin/
 
       - name: Assert Archive Integrity & Layout
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         run: |
           if [[ ! -f antigravity-termux-standalone.tar.gz ]]; then
             echo "Error: Release archive antigravity-termux-standalone.tar.gz was not generated." >&2
@@ -205,6 +259,7 @@ jobs:
           echo "Archive validation passed successfully! Footprint is clean."
 
       - name: Upload Standalone Tarball Preview
+        if: ${{ steps.path_policy.outputs.pr_validation == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: antigravity-termux-standalone-preview
