@@ -37,6 +37,10 @@ Arguments:
   [path_to_upstream_antigravity]   Optional. Path to a local raw arm64 binary.
                                    If omitted, fetches the latest upstream binary automatically.
 
+Environment:
+  AGY_VERSION                      Version to embed when building from a local binary.
+                                   Required if that binary cannot run on this host.
+
 Requirements:
   - curl, jq, tar, python3
   - clang or gcc (or \$ANDROID_NDK_HOME configured for cross-compiling)
@@ -113,8 +117,10 @@ info "Selected C compiler: $local_cc"
 mkdir -p staging bin
 
 UPSTREAM_BIN=""
+using_local_upstream=0
 
 if [[ $# -gt 0 ]]; then
+  using_local_upstream=1
   UPSTREAM_BIN="$1"
   if [[ ! -f "$UPSTREAM_BIN" ]]; then
     die "Specified upstream binary not found: $UPSTREAM_BIN"
@@ -150,7 +156,48 @@ else
   fi
 fi
 
-# 1. Apply VA39 Memory Patches to generate bin/agy.va39
+# Determine build version for compilation macro
+latest_version="${latest_version:-}"
+
+# Prefer an explicit version supplied by the caller.
+if [[ -z "$latest_version" && -n "${AGY_VERSION:-}" ]]; then
+  latest_version="$AGY_VERSION"
+fi
+
+# For local binaries, try executing the artifact itself to read the version.
+if [[ -z "$latest_version" && "$using_local_upstream" -eq 1 ]]; then
+  if [[ -f "$UPSTREAM_BIN" && -x "$UPSTREAM_BIN" ]]; then
+    if bin_version=$("$UPSTREAM_BIN" --version 2>/dev/null); then
+      if [[ "$bin_version" =~ v?([0-9]+\.[0-9]+\.[0-9]+([-.+_A-Za-z0-9]*)?) ]]; then
+        latest_version="${BASH_REMATCH[1]}"
+      fi
+    fi
+  fi
+fi
+
+# Automatic downloads may use the manifest as the source of truth.
+if [[ -z "$latest_version" && "$using_local_upstream" -eq 0 ]]; then
+  info "Querying manifest for build version..."
+  if manifest_data=$(curl -fsSL "$MANIFEST_URL" 2>/dev/null); then
+    manifest_version=$(echo "$manifest_data" | jq -r .version 2>/dev/null)
+    if [[ -n "$manifest_version" && "$manifest_version" != "null" ]]; then
+      latest_version="$manifest_version"
+    fi
+  fi
+fi
+
+# Local builds must not be stamped with an unrelated live release version.
+if [[ -z "$latest_version" && "$using_local_upstream" -eq 1 ]]; then
+  die "Could not determine version for local upstream binary. Set AGY_VERSION to the supplied binary's release version."
+fi
+
+# Use the legacy default only if automatic version resolution fails.
+if [[ -z "$latest_version" ]]; then
+  latest_version="1.0.2"
+fi
+info "Resolved build version: v$latest_version"
+
+# Apply VA39 memory patches to generate bin/agy.va39.
 info "Applying VA39 structural memory allocation patches..."
 python3 - "$UPSTREAM_BIN" "bin/agy.va39" <<'PY'
 import sys, shutil, struct, pathlib
@@ -195,7 +242,7 @@ print(f"Patched parameters: ubfx={ubfx_count}, lsl={lsl_count}, mask={mask_count
 PY
 ok "Patched binary generated: bin/agy.va39"
 
-# 2. Compile the dynamic mmap interposer first
+# Compile the dynamic mmap interposer.
 info "Compiling mmap VA39 compatibility layer as a shared library..."
 if [[ -n "${TERMUX_VERSION:-}" ]]; then
   echo ""
@@ -211,7 +258,7 @@ if ! "$local_cc" -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.
   die "Compilation of lib/mmap_va39_fix.c failed."
 fi
 
-# 3. Generate embedded hex array bytes header
+# Generate the embedded byte header for the interposer.
 info "Generating embedded byte header for dynamic interposer preloading..."
 python3 -c '
 import pathlib
@@ -229,9 +276,9 @@ pathlib.Path("lib/mmap_va39_fix_bytes.h").write_text(
 )
 '
 
-# 4. Compile native C bootstrapper bin/agy (which embeds mmap_va39_fix_bytes.h)
+# Compile the native C bootstrapper with the embedded interposer.
 info "Compiling native C bootstrapper with embedded interposer..."
-if ! "$local_cc" -O2 -o bin/agy lib/agy_helper.c; then
+if ! "$local_cc" -O2 -DAGY_TERMUX_VERSION="\"$latest_version\"" -o bin/agy lib/agy_helper.c; then
   die "Compilation of lib/agy_helper.c failed."
 fi
 
