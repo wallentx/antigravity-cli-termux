@@ -135,6 +135,12 @@ else
   
   latest_version=$(echo "$manifest" | jq -r .version)
   download_url=$(echo "$manifest" | jq -r .url)
+  if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
+    die "Manifest did not include a valid version."
+  fi
+  if [[ -z "$download_url" || "$download_url" == "null" ]]; then
+    die "Manifest did not include a valid download URL."
+  fi
   
   info "Latest official version found: v$latest_version"
   info "Downloading upstream dynamic binary..."
@@ -175,26 +181,11 @@ if [[ -z "$latest_version" && "$using_local_upstream" -eq 1 ]]; then
   fi
 fi
 
-# Automatic downloads may use the manifest as the source of truth.
-if [[ -z "$latest_version" && "$using_local_upstream" -eq 0 ]]; then
-  info "Querying manifest for build version..."
-  if manifest_data=$(curl -fsSL "$MANIFEST_URL" 2>/dev/null); then
-    manifest_version=$(echo "$manifest_data" | jq -r .version 2>/dev/null)
-    if [[ -n "$manifest_version" && "$manifest_version" != "null" ]]; then
-      latest_version="$manifest_version"
-    fi
-  fi
-fi
-
 # Local builds must not be stamped with an unrelated live release version.
 if [[ -z "$latest_version" && "$using_local_upstream" -eq 1 ]]; then
   die "Could not determine version for local upstream binary. Set AGY_VERSION to the supplied binary's release version."
 fi
 
-# Use the legacy default only if automatic version resolution fails.
-if [[ -z "$latest_version" ]]; then
-  latest_version="1.0.2"
-fi
 info "Resolved build version: v$latest_version"
 
 # Apply VA39 memory patches to generate bin/agy.va39.
