@@ -9,6 +9,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+
+#ifndef HWCAP_ATOMICS
+#define HWCAP_ATOMICS (1 << 8)
+#endif
 
 #ifndef AGY_TERMUX_VERSION
 #define AGY_TERMUX_VERSION "1.0.2"
@@ -172,14 +178,32 @@ int main(int argc, char **argv) {
     const char *loader = "/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1";
     const char *dir = NULL;
     const char *fixer_path = NULL;
+    const char *qemu = NULL;
     char **new_argv = NULL;
     int is_termux = 0;
+    int has_lse = 0;
     int arg_idx = 0;
     int written = 0;
     ssize_t read_len = 0;
 
     // Detect if running in native Termux
     is_termux = (access("/data/data/com.termux/files/usr/bin", F_OK) == 0);
+
+    // Detect LSE support
+    has_lse = (getauxval(AT_HWCAP) & HWCAP_ATOMICS);
+    if (!has_lse) {
+        if (is_termux) {
+            if (access("/data/data/com.termux/files/usr/bin/qemu-aarch64", F_OK) == 0) {
+                qemu = "/data/data/com.termux/files/usr/bin/qemu-aarch64";
+            }
+        } else {
+            if (access("/usr/bin/qemu-aarch64", F_OK) == 0) {
+                qemu = "/usr/bin/qemu-aarch64";
+            } else if (access("/usr/bin/qemu-arm64-static", F_OK) == 0) {
+                qemu = "/usr/bin/qemu-arm64-static";
+            }
+        }
+    }
 
     // 2. Clear conflicting Android Bionic preloads and search paths
     if (is_termux) {
@@ -246,15 +270,18 @@ int main(int argc, char **argv) {
     }
 
     // 9. Construct new argument array
-    // We allocate enough space for: loader + "--preload" + fixer_path + "--library-path" + lib_path
+    // We allocate enough space for: qemu + loader + "--preload" + fixer_path + "--library-path" + lib_path
     // + patched_bin + user args + NULL
-    int new_argc = argc + 8;
+    int new_argc = argc + 10;
     new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
     if (!new_argv) {
         return 1;
     }
 
     arg_idx = 0;
+    if (qemu) {
+        new_argv[arg_idx++] = (char *)qemu;
+    }
     new_argv[arg_idx++] = (char *)loader;
 
     // Inject the interposer dynamic library as a preload if unpacked successfully
@@ -273,9 +300,17 @@ int main(int argc, char **argv) {
     new_argv[arg_idx] = NULL;
 
     // 10. Execute the glibc dynamic loader
-    if (execv(loader, new_argv) == -1) {
-        perror("[agy-termux] execv failed");
-        free(new_argv);
-        return 1;
+    if (qemu) {
+        if (execv(qemu, new_argv) == -1) {
+            perror("[agy-termux] execv (qemu) failed");
+            free(new_argv);
+            return 1;
+        }
+    } else {
+        if (execv(loader, new_argv) == -1) {
+            perror("[agy-termux] execv failed");
+            free(new_argv);
+            return 1;
+        }
     }
 }
