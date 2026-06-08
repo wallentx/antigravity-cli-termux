@@ -5,7 +5,7 @@
 ## 🚀 Quick Start (Termux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/7ui77/antigravity-cli-termux/dev/install.sh | bash
 ```
 
 ![Antigravity CLI Demo](antigravity.gif)
@@ -41,14 +41,20 @@ To circumvent this, a relocatable C bootstrapper (`bin/agy`) is compiled:
 * **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
 * **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
 
-#### 3. PRoot Distro Compatibility (Dynamic Interposer)
+#### 3. LSE (Large System Extensions) & QEMU Support
+The engine requires ARMv8.1-A Atomics (LSE) to run natively. On older ARMv8.0-A CPUs lacking LSE support, the binary will crash with an "Illegal Instruction".
+This fork includes an automated compatibility layer:
+* **Detection**: The installer and bootstrapper automatically detect if the CPU lacks LSE support via `getauxval(AT_HWCAP)`.
+* **QEMU Emulation**: If LSE is missing, the bootstrapper automatically wraps the engine execution with `qemu-aarch64`. The installer will offer to auto-install QEMU via `pkg` (Termux) or `apt` (PRoot/chroot).
+
+#### 4. PRoot Distro Compatibility (Dynamic Interposer)
 When running inside a non-native Termux environment (e.g., a guest PRoot environment on Android), memory allocation limits can trigger immediate TCMalloc crashes due to the 39-bit VA kernel boundaries.
 To resolve this, a runtime **Memory Interposer** architecture is implemented:
 * **Embedded Interposer**: A dynamic shared library (`libmmap_va39_fix.so`) intercepts `mmap` calls at runtime and redirects memory allocation requests above the 39-bit limit to safe address ranges.
 * **Just-in-Time Unpacking**: To keep the standalone release footprint restricted strictly to the `bin/` directory, the interposer library is embedded as a raw byte array directly inside the `bin/agy` executable. At runtime, the bootstrapper automatically extracts the `.so` to a writable temp directory (`$TMPDIR` -> `/tmp`) and preloads it on the fly.
 * *For more details, see the technical reference at [docs/PROOT_DISTRO_COMPAT.md](docs/PROOT_DISTRO_COMPAT.md).*
 
-#### 4. In-Place Self-Updating
+#### 5. In-Place Self-Updating
 The C bootstrapper intercepts the `update` subcommand and queries this fork's GitHub Releases API, providing a seamless in-place update mechanism that updates both the patched engine and itself without needing complex wrappers or manually executing curl commands.
 
 ---
@@ -89,7 +95,7 @@ Antigravity CLI brings the core capabilities of Antigravity 2.0 (multi-step reas
 
 ### Android (Termux)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/7ui77/antigravity-cli-termux/dev/install.sh | bash
 ```
 
 ### macOS / Linux
