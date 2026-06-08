@@ -170,6 +170,7 @@ jobs:
             mkdir -p "$HOME/agy-smoke"
             cd "$HOME/agy-smoke"
 
+            pkg update -y
             pkg install ca-certificates glibc-repo -y
             pkg install glibc-runner -y
             curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/v1.0.6/antigravity-termux-standalone.tar.gz
