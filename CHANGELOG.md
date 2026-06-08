@@ -2,6 +2,17 @@
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
 
+## 1.0.6
+
+- Added shell-style path auto-completion for `/open` and `/add-dir`.
+- Added optimistic rendering for user chat prompt submissions, injecting messages immediately into the viewport to eliminate perceived input lag.
+- Added fuzzy and partial substring matching across slash commands. E.g. `/el` -> shows `/help` and `/model` while previous no suggested completions.
+- Fixed a bug when suggestion was not triggered when `@` is typed after `(`. Enabled unconditional typeahead suggestions whenever `@` is typed without preceding whitespace, streamlining mention workflows.
+- Skipped subagent conversations from `/resume`, keeping the standalone conversation picker focused purely on direct user initiated conversations.
+- Added a `stack_with_default` flag to the `statusLine` configuration to render both the default Antigravity status line and custom status line output vertically stacked.
+- Fixed a bug where entering a prompt immediately after pressing `Esc` (to interrupt an active agent stream) caused the newly typed input to be swallowed or rejected.
+- Fixed `--sandbox` flag propagation in headless print mode (`-p` / `--print`), ensuring sandbox isolation is correctly enforced during non-interactive execution.
+
 ## 1.0.5
 
 - Added `--model` to set model when launching CLI. Also a new `models` subcommand to list available models.
