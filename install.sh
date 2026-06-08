@@ -2,7 +2,7 @@
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
-REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
+REPO="${AGY_REPO:-7ui77/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
