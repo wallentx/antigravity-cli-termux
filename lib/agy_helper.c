@@ -199,9 +199,24 @@ int main(int argc, char **argv) {
         } else {
             if (access("/usr/bin/qemu-aarch64", F_OK) == 0) {
                 qemu = "/usr/bin/qemu-aarch64";
+            } else if (access("/usr/bin/qemu-aarch64-static", F_OK) == 0) {
+                qemu = "/usr/bin/qemu-aarch64-static";
             } else if (access("/usr/bin/qemu-arm64-static", F_OK) == 0) {
                 qemu = "/usr/bin/qemu-arm64-static";
             }
+        }
+
+        if (!qemu) {
+            if (is_termux) {
+                (void)fprintf(stderr,
+                              "[ERR] CPU lacks LSE (Large System Extensions) support and QEMU was not found.\n"
+                              "      Please install QEMU ('pkg install qemu-user-aarch64') to run.\n");
+            } else {
+                (void)fprintf(stderr,
+                              "[ERR] CPU lacks LSE (Large System Extensions) support and QEMU was not found.\n"
+                              "      Please install 'qemu-user-static' or 'qemu-user' using your package manager to run.\n");
+            }
+            return 1;
         }
     }
 

@@ -295,7 +295,9 @@ check_qemu() {
   if [[ "$ENV_TYPE" == "termux" ]]; then
     command -v qemu-aarch64 >/dev/null 2>&1
   else
-    command -v qemu-aarch64 >/dev/null 2>&1 || command -v qemu-arm64-static >/dev/null 2>&1
+    command -v qemu-aarch64 >/dev/null 2>&1 || \
+    command -v qemu-aarch64-static >/dev/null 2>&1 || \
+    command -v qemu-arm64-static >/dev/null 2>&1
   fi
 }
 
@@ -347,22 +349,22 @@ if ! check_lse; then
   if ! check_qemu; then
     printf "\n  %b[!]%b LSE - Large System Extensions - not supported by your CPU.\n" "$RED" "$RESET"
     printf "      QEMU emulation is required to run the engine.\n"
-    printf "  Would you like to install it now? [Y/n]: "
-    read -r -n 1 ans < /dev/tty || ans="n"
-    printf "\n"
 
-    if [[ "$ans" =~ ^[Yy]$ ]] || [[ -z "$ans" ]]; then
-      if [[ "$ENV_TYPE" == "termux" ]]; then
+    if [[ "$ENV_TYPE" == "termux" ]]; then
+      printf "  Would you like to install it now? [Y/n]: "
+      read -r -n 1 ans < /dev/tty || ans="n"
+      printf "\n"
+
+      if [[ "$ans" =~ ^[Yy]$ ]] || [[ -z "$ans" ]]; then
         pkg install -y qemu-user-aarch64
+        if ! check_qemu; then
+          die "Failed to install QEMU. Please install manually (e.g., pkg install qemu-user-aarch64)."
+        fi
       else
-        sudo apt update && sudo apt install -y qemu-user-static || sudo apt install -y qemu-user
-      fi
-      
-      if ! check_qemu; then
-        die "Failed to install QEMU. Please install manually (e.g., pkg install qemu-user-aarch64)."
+        die "QEMU is required for non-LSE CPUs to proceed."
       fi
     else
-      die "QEMU is required for non-LSE CPUs to proceed."
+      die "QEMU user emulation is not installed.\n  Please install qemu-user-static or qemu-user using your distribution's package manager and try again."
     fi
   fi
   ok "LSE Emulation: QEMU enabled"
