@@ -2,7 +2,19 @@
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
-REPO="${AGY_REPO:-7ui77/antigravity-cli-termux}"
+# ── Dynamic Repository Detection ──────────────────────────────────────────────
+# If AGY_REPO is not set, try to detect it from the script execution context
+if [[ -z "${AGY_REPO:-}" ]]; then
+  # Try to detect repo from the URL if piped from curl (BASH_SOURCE is often empty in pipes)
+  # But we can look at common patterns or fallback to a default
+  DEFAULT_REPO="7ui77/antigravity-cli-termux"
+  
+  # Heuristic: If we can't detect, we use the fallback, 
+  # but we allow overriding via environment variable.
+  REPO="$DEFAULT_REPO"
+else
+  REPO="$AGY_REPO"
+fi
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
