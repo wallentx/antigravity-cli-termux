@@ -343,7 +343,7 @@ if ! check_lse; then
       if [[ "$ENV_TYPE" == "termux" ]]; then
         pkg install -y qemu-user-aarch64
       else
-        sudo apt update && sudo apt install -y qemu-user-static || sudo apt install -y qemu-user
+        apt update && apt install -y qemu-user-static || apt install -y qemu-user
       fi
       
       if ! check_qemu; then
