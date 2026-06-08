@@ -333,7 +333,7 @@ fi
 
 if ! check_lse; then
   if ! check_qemu; then
-    printf "\n  %b[!]%b LSE (Large System Extensions) not supported by your CPU.\n" "$RED" "$RESET"
+    printf "\n  %b[!]%b LSE - Large System Extensions - not supported by your CPU.\n" "$RED" "$RESET"
     printf "      QEMU emulation is required to run the engine.\n"
     printf "  Would you like to install it now? [Y/n]: "
     read -r -n 1 ans < /dev/tty || ans="n"
