@@ -30,10 +30,12 @@ fi
 if [[ "$ENV_TYPE" == "termux" ]]; then
   TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
   INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
+  INTERNAL_BIN_DIR="${TERMUX_PREFIX}/opt/agy/bin"
   TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
   EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
 else
   INSTALL_BIN_DIR="$HOME/.local/bin"
+  INTERNAL_BIN_DIR="$HOME/.local/opt/agy/bin"
   TMP="${TMPDIR:-/tmp}/antigravity-termux-standalone.tar.gz"
   EXTRACT_DIR="${TMPDIR:-/tmp}/.agy-extract"
 fi
@@ -344,14 +346,18 @@ if [[ -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
   mv -f "$INSTALL_BIN_DIR/agy.va39" "$AGY_VA39_BAK" || die "Failed to back up existing agy.va39 binary from $INSTALL_BIN_DIR"
 fi
 
-install -m 0755 "$EXTRACT_DIR/bin/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to install agy binary to $INSTALL_BIN_DIR"
-install -m 0755 "$EXTRACT_DIR/bin/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
+mkdir -p "$INTERNAL_BIN_DIR" || die "Failed to create directory $INTERNAL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/bin/agy" "$INTERNAL_BIN_DIR/agy" || die "Failed to install agy binary to $INTERNAL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/bin/agy.va39" "$INTERNAL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INTERNAL_BIN_DIR"
+ln -sf "$INTERNAL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to create symlink in $INSTALL_BIN_DIR"
+# Ensure the secondary binary is not in the system bin to avoid RPATH collision
+[[ -f "$INSTALL_BIN_DIR/agy.va39" ]] && rm -f "$INSTALL_BIN_DIR/agy.va39"
 rm -rf "$EXTRACT_DIR"
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
-if [[ ! -f "$INSTALL_BIN_DIR/agy" || ! -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
-  rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
-  die "Verification failed: binaries not found in $INSTALL_BIN_DIR"
+if [[ ! -f "$INSTALL_BIN_DIR/agy" || ! -f "$INTERNAL_BIN_DIR/agy.va39" ]]; then
+  rm -f "$INSTALL_BIN_DIR/agy"
+  die "Verification failed: binaries not found in $INTERNAL_BIN_DIR"
 fi
 ok "Binary found"
 
