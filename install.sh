@@ -146,6 +146,35 @@ progress_spinner() {
   return $exit_status
 }
 
+finish_ok() {
+  local version="$1"
+  ok "Engine online ($version verified)"
+  [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
+  [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
+}
+
+run_pkg_with_spinner() {
+  local msg="$1"
+  shift
+  GLIBC_PCT="${TMP}.pct"
+  echo "0" > "$GLIBC_PCT"
+  {
+    "$@" -o APT::Status-Fd=1 2>&1 | awk -v pct_file="$GLIBC_PCT" '
+      /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
+        split($0, a, ":")
+        pct = int(a[3])
+        if (pct < 0) pct = 0
+        if (pct > 100) pct = 100
+        print pct > pct_file
+        close(pct_file)
+        fflush()
+      }'
+  } &
+  progress_spinner $! "$msg" "$GLIBC_PCT" || true
+  rm -f "$GLIBC_PCT"
+  GLIBC_PCT=""
+}
+
 download_with_progress() {
   local url=$1
   local dest=$2
@@ -358,12 +387,33 @@ ok "Binary found"
 # ── Test & Extract Version ────────────────────────────────────────────────────
 VERSION=""
 if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
-  ok "Engine online ($VERSION verified)"
-  [[ -n "$AGY_BAK" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK"
-  [[ -n "$AGY_VA39_BAK" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK"
+  finish_ok "$VERSION"
 else
-  rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
-  die "Binaries failed to execute locally. Check dependencies."
+  if [[ "$ENV_TYPE" == "termux" ]]; then
+    info "Binary failed. Attempting dependency repair..."
+    run_pkg_with_spinner "Repairing Termux dependencies..." pkg reinstall -y proot glibc ca-certificates
+    rm -f "$HOME/.local/bin/agy" "$HOME/.local/bin/agy.va39"
+    rm -rf "$HOME/.local/agy"
+    hash -r
+    
+    if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
+      finish_ok "$VERSION"
+    else
+      info "Repair failed. Attempting full package update..."
+      run_pkg_with_spinner "Updating package definitions..." apt update
+      run_pkg_with_spinner "Deep reinstalling dependencies..." pkg reinstall -y proot glibc ca-certificates
+      
+      if VERSION=$("$INSTALL_BIN_DIR/agy" --version 2>/dev/null); then
+        finish_ok "$VERSION"
+      else
+        rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+        die "Binaries failed to execute locally. Check dependencies."
+      fi
+    fi
+  else
+    rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
+    die "Binaries failed to execute locally. Check dependencies."
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
