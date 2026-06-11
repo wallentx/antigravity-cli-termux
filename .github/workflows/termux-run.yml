@@ -1,6 +1,11 @@
 name: Termux Run
 
 on:
+  workflow_run:
+    workflows:
+      - Pull Request Validation
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       termux_channel:
@@ -36,17 +41,24 @@ on:
         required: true
         type: boolean
         default: false
+      release_tag:
+        description: Release tag to download and smoke-test inside Termux
+        required: false
+        type: string
+        default: ""
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: termux-emulator-probe-${{ github.ref }}
+  group: termux-emulator-probe-${{ github.event.workflow_run.id || github.ref }}
   cancel-in-progress: true
 
 jobs:
   api35-x86_64:
     name: API 35 x86_64 Termux probe
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -57,8 +69,12 @@ jobs:
     env:
       TERMUX_HOME: /data/data/com.termux/files/home
       TERMUX_PREFIX: /data/data/com.termux/files/usr
-      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel }}-
-      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel }}-${{ github.run_id }}-${{ github.run_attempt }}
+      TERMUX_CHANNEL_INPUT: ${{ inputs.termux_channel || 'stable' }}
+      TERMUX_RESTORE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_run' || inputs.restore_snapshot }}
+      TERMUX_SAVE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.save_snapshot }}
+      TERMUX_RELEASE_TEST_TAG: ${{ inputs.release_tag || '' }}
+      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel || 'stable' }}-
+      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Check out repository
@@ -67,9 +83,17 @@ jobs:
       - name: Download Termux APK
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_CHANNEL: ${{ inputs.termux_channel }}
+          TERMUX_CHANNEL: ${{ env.TERMUX_CHANNEL_INPUT }}
         run: |
           ./.github/scripts/download-termux-apk.sh
+
+      - name: Download PR standalone archive
+        if: ${{ github.event_name == 'workflow_run' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          ./.github/scripts/download-pr-check-artifact.sh
 
       - name: Enable KVM
         run: |
@@ -81,7 +105,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Restore AVD snapshot cache
-        if: ${{ inputs.restore_snapshot }}
+        if: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -94,8 +118,8 @@ jobs:
       - name: Configure emulator options
         id: emulator-options
         env:
-          RESTORE_SNAPSHOT: ${{ inputs.restore_snapshot }}
-          SAVE_SNAPSHOT: ${{ inputs.save_snapshot }}
+          RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
+          SAVE_SNAPSHOT: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT }}
         run: |
           set -eu
 
@@ -123,10 +147,11 @@ jobs:
         env:
           REQUIRE_AARCH64: ${{ inputs.require_aarch64 }}
           TERMUX_BOOTSTRAP_ATTEMPTS: 240
-          TERMUX_RESTORE_SNAPSHOT: ${{ inputs.restore_snapshot }}
-          TERMUX_SAVE_SNAPSHOT: ${{ inputs.save_snapshot }}
-          TERMUX_EXTRA_COMMANDS: ${{ inputs.extra_commands }}
-          TERMUX_EXTRA_COMMANDS_AT_START: ${{ inputs.extra_commands_at_start }}
+          TERMUX_RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
+          TERMUX_SAVE_SNAPSHOT: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT }}
+          TERMUX_EXTRA_COMMANDS: ${{ inputs.extra_commands || '' }}
+          TERMUX_EXTRA_COMMANDS_AT_START: ${{ inputs.extra_commands_at_start || false }}
+          TERMUX_RELEASE_TEST_TAG: ${{ env.TERMUX_RELEASE_TEST_TAG }}
         with:
           api-level: 35
           target: google_apis
@@ -138,7 +163,7 @@ jobs:
           script: bash .github/scripts/termux-emulator-probe.sh
 
       - name: Save AVD snapshot cache
-        if: ${{ inputs.save_snapshot && success() }}
+        if: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT == 'true' && success() }}
         uses: actions/cache/save@v4
         with:
           path: |
@@ -155,4 +180,5 @@ jobs:
             termux-emulator-logcat.txt
             termux-emulator-probe.env
             termux-releases.json
+            termux-pr-artifact/antigravity-termux-standalone.tar.gz
           if-no-files-found: ignore

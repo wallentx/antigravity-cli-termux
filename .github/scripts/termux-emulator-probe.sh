@@ -103,6 +103,65 @@ run_extra_termux_commands() {
   record TERMUX_EXTRA_COMMANDS_RAN "$phase"
 }
 
+validate_release_tag() {
+  local release_tag=$1
+
+  if [[ -z "$release_tag" || "$release_tag" == -* || ! "$release_tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "Release tag contains unsupported characters: $release_tag" >&2
+    return 1
+  fi
+}
+
+test_host_standalone_archive() {
+  local host_archive=${TERMUX_STANDALONE_ARCHIVE:-}
+  local archive_name=antigravity-termux-standalone.tar.gz
+
+  if [[ -z "$host_archive" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$host_archive" ]]; then
+    echo "Standalone archive path does not exist: $host_archive" >&2
+    return 1
+  fi
+
+  log "Testing standalone archive from PR artifact: $host_archive"
+  adb push "$host_archive" "/data/local/tmp/$archive_name" >/dev/null
+  adb shell chmod 0644 "/data/local/tmp/$archive_name"
+  run_as_termux_shell "cp /data/local/tmp/$archive_name $TERMUX_HOME/$archive_name"
+
+  # shellcheck disable=SC2016
+  termux_exec '
+rm -rf "$HOME/agy-pr-artifact-smoke"
+mkdir -p "$HOME/agy-pr-artifact-smoke"
+cd "$HOME/agy-pr-artifact-smoke"
+cp "$HOME/antigravity-termux-standalone.tar.gz" .
+tar -xzf antigravity-termux-standalone.tar.gz
+./bin/agy --help
+'
+  record TERMUX_PR_ARTIFACT_SMOKE "passed"
+}
+
+test_release_standalone_archive() {
+  local release_tag=${TERMUX_RELEASE_TEST_TAG:-}
+
+  if [[ -z "$release_tag" ]]; then
+    return 0
+  fi
+
+  validate_release_tag "$release_tag"
+  log "Testing standalone release artifact: $release_tag"
+
+  termux_exec "
+rm -rf \"\$HOME/agy-release-smoke\"
+mkdir -p \"\$HOME/agy-release-smoke\"
+cd \"\$HOME/agy-release-smoke\"
+curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/$release_tag/antigravity-termux-standalone.tar.gz
+tar -xzf antigravity-termux-standalone.tar.gz
+./bin/agy --help
+"
+  record TERMUX_RELEASE_ARTIFACT_SMOKE "$release_tag"
+}
+
 wait_for_termux_bootstrap() {
   local attempt
 
@@ -138,6 +197,9 @@ record TERMUX_RESTORE_SNAPSHOT "${TERMUX_RESTORE_SNAPSHOT:-false}"
 record TERMUX_SAVE_SNAPSHOT "${TERMUX_SAVE_SNAPSHOT:-false}"
 record TERMUX_AVD_CACHE_PREFIX "${TERMUX_AVD_CACHE_PREFIX:-unknown}"
 record TERMUX_AVD_CACHE_KEY "${TERMUX_AVD_CACHE_KEY:-unknown}"
+record TERMUX_STANDALONE_ARCHIVE "${TERMUX_STANDALONE_ARCHIVE:-none}"
+record TERMUX_PR_SOURCE_RUN_ID "${TERMUX_PR_SOURCE_RUN_ID:-none}"
+record TERMUX_RELEASE_TEST_TAG "${TERMUX_RELEASE_TEST_TAG:-none}"
 record TERMUX_EXTRA_COMMANDS_PRESENT "$([[ -n "${TERMUX_EXTRA_COMMANDS:-}" ]] && echo true || echo false)"
 record TERMUX_EXTRA_COMMANDS_AT_START "${TERMUX_EXTRA_COMMANDS_AT_START:-false}"
 
@@ -182,6 +244,9 @@ termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc
 record TERMUX_UNAME_M "$termux_arch"
 record TERMUX_DPKG_ARCH "$termux_dpkg_arch"
 record TERMUX_AARCH64_GLIBC_LOADER "$termux_loader_state"
+
+test_host_standalone_archive
+test_release_standalone_archive
 
 {
   echo "### Termux Emulator Probe"
