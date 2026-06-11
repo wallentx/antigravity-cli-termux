@@ -220,10 +220,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    // 7. Resolve dynamic loader path
-    if (access(loader, F_OK) != 0) {
-        loader = "/lib/ld-linux-aarch64.so.1";
-    }
+    // 7. Use the Termux aarch64 glibc loader directly.
 
     // 8. Construct relocatable library search path
     if (is_termux) {
