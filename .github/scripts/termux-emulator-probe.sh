@@ -126,6 +126,17 @@ mkdir -p "$HOME/agy-pr-artifact-smoke"
 cd "$HOME/agy-pr-artifact-smoke"
 cp "$HOME/antigravity-termux-standalone.tar.gz" .
 tar -xzf antigravity-termux-standalone.tar.gz
+echo "[termux-probe] Extracted PR artifact bin directory:"
+ls -la bin
+echo "[termux-probe] Available glibc loader paths:"
+ls -la "$PREFIX/glibc/lib" 2>/dev/null || true
+if command -v file >/dev/null 2>&1; then
+  file bin/agy bin/agy.va39 || true
+fi
+if command -v readelf >/dev/null 2>&1; then
+  readelf -l bin/agy.va39 2>/dev/null | sed -n "/interpreter/p" || true
+fi
+echo "[termux-probe] Running PR artifact: ./bin/agy --help"
 ./bin/agy --help
 '
   record TERMUX_PR_ARTIFACT_SMOKE "passed"
@@ -149,6 +160,17 @@ mkdir -p \"\$HOME/agy-release-smoke\"
 cd \"\$HOME/agy-release-smoke\"
 curl -fsSLO \"https://github.com/wallentx/antigravity-cli-termux/releases/download/\${RELEASE_TAG}/antigravity-termux-standalone.tar.gz\"
 tar -xzf antigravity-termux-standalone.tar.gz
+echo \"[termux-probe] Extracted release artifact bin directory:\"
+ls -la bin
+echo \"[termux-probe] Available glibc loader paths:\"
+ls -la \"\$PREFIX/glibc/lib\" 2>/dev/null || true
+if command -v file >/dev/null 2>&1; then
+  file bin/agy bin/agy.va39 || true
+fi
+if command -v readelf >/dev/null 2>&1; then
+  readelf -l bin/agy.va39 2>/dev/null | sed -n \"/interpreter/p\" || true
+fi
+echo \"[termux-probe] Running release artifact: ./bin/agy --help\"
 ./bin/agy --help
 "
   record TERMUX_RELEASE_ARTIFACT_SMOKE "$release_tag"
@@ -181,8 +203,10 @@ use_restored_termux_bootstrap() {
 log "Starting Termux emulator probe."
 device_abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
 device_abilist=$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')
+native_bridge=$(adb shell getprop ro.dalvik.vm.native.bridge | tr -d '\r')
 record ANDROID_CPU_ABI "$device_abi"
 record ANDROID_CPU_ABILIST "$device_abilist"
+record ANDROID_NATIVE_BRIDGE "${native_bridge:-none}"
 record TERMUX_CHANNEL "${TERMUX_CHANNEL:-unknown}"
 record TERMUX_RELEASE_TAG "${TERMUX_RELEASE_TAG:-unknown}"
 record TERMUX_APK_NAME "${TERMUX_APK_NAME:-unknown}"
@@ -244,10 +268,12 @@ log "Collecting Termux runtime details."
 termux_arch=$(termux_exec 'uname -m' | tr -d '\r')
 termux_dpkg_arch=$(termux_exec 'dpkg --print-architecture 2>/dev/null || true' | tr -d '\r')
 termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 && echo present || echo missing' | tr -d '\r')
+termux_x86_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-x86-64.so.2 && echo present || echo missing' | tr -d '\r')
 
 record TERMUX_UNAME_M "$termux_arch"
 record TERMUX_DPKG_ARCH "$termux_dpkg_arch"
 record TERMUX_AARCH64_GLIBC_LOADER "$termux_loader_state"
+record TERMUX_X86_64_GLIBC_LOADER "$termux_x86_loader_state"
 
 test_host_standalone_archive
 test_release_standalone_archive
