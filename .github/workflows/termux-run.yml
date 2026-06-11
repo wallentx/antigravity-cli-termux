@@ -28,7 +28,7 @@ jobs:
   api35-x86_64:
     name: API 35 x86_64 Termux probe
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
 
     defaults:
       run:

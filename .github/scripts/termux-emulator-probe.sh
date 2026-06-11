@@ -25,20 +25,48 @@ record() {
   printf '%s=%s\n' "$1" "$2" | tee -a "$probe_file"
 }
 
-run_as_termux() {
-  adb shell run-as com.termux "$@"
+run_as_termux_shell() {
+  local command_line=$1
+
+  if [[ "$command_line" == *"'"* ]]; then
+    echo "run_as_termux_shell does not accept single quotes in command text." >&2
+    return 1
+  fi
+
+  adb shell "run-as com.termux sh -c '$command_line'"
 }
 
 termux_exec() {
   local command_line=$1
+  local local_script
+  local remote_tmp=/data/local/tmp/termux-probe-command.sh
+  local remote_script="$TERMUX_HOME/.termux-probe-command.sh"
 
-  run_as_termux env \
-    "HOME=$TERMUX_HOME" \
-    "PREFIX=$TERMUX_PREFIX" \
-    "TMPDIR=$TERMUX_PREFIX/tmp" \
-    "TERMUX_VERSION=ci" \
-    "PATH=$TERMUX_PREFIX/bin:/system/bin:/system/xbin" \
-    "$TERMUX_PREFIX/bin/bash" -lc "$command_line"
+  local_script=$(mktemp "${RUNNER_TEMP:-.}/termux-command.XXXXXX")
+  {
+    printf '#!%s/bin/bash\n' "$TERMUX_PREFIX"
+    printf 'set -Eeuo pipefail\n'
+    printf 'export HOME=%q\n' "$TERMUX_HOME"
+    printf 'export PREFIX=%q\n' "$TERMUX_PREFIX"
+    printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
+    printf 'export TERMUX_VERSION=ci\n'
+    printf 'export PATH=%q\n' "$TERMUX_PREFIX/bin:/system/bin:/system/xbin"
+    printf "mkdir -p \"\$TMPDIR\"\n"
+    printf "cd \"\$HOME\"\n"
+    printf '%s\n' "$command_line"
+  } > "$local_script"
+
+  if ! adb push "$local_script" "$remote_tmp" >/dev/null; then
+    rm -f "$local_script"
+    return 1
+  fi
+
+  if ! run_as_termux_shell "cp $remote_tmp $remote_script && chmod 700 $remote_script && $TERMUX_PREFIX/bin/bash $remote_script"; then
+    rm -f "$local_script"
+    return 1
+  fi
+
+  rm -f "$local_script"
 }
 
 dump_termux_state() {
@@ -49,8 +77,18 @@ dump_termux_state() {
   adb shell dumpsys package com.termux 2>/dev/null \
     | grep -E 'versionName|versionCode|primaryCpuAbi|secondaryCpuAbi|dataDir' \
     | sed 's/^/[termux-probe] package: /' || true
-  run_as_termux sh -c 'pwd; id; ls -la files files/usr files/usr/bin 2>&1' \
+  run_as_termux_shell 'pwd; id; ls -la files files/usr files/usr/bin 2>&1' \
     | sed 's/^/[termux-probe] run-as: /' || true
+}
+
+install_termux_packages() {
+  log "Installing Termux packages: ca-certificates glibc-repo glibc-runner"
+  termux_exec '
+pkg update -y
+pkg install ca-certificates glibc-repo -y
+pkg install glibc-runner -y
+'
+  record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
 }
 
 wait_for_termux_bootstrap() {
@@ -58,7 +96,7 @@ wait_for_termux_bootstrap() {
 
   log "Waiting for Termux bootstrap: $bootstrap_attempts attempts, ${bootstrap_interval_seconds}s interval"
   for ((attempt = 1; attempt <= bootstrap_attempts; attempt++)); do
-    if run_as_termux test -x files/usr/bin/bash >/dev/null 2>&1; then
+    if run_as_termux_shell 'test -x files/usr/bin/bash' >/dev/null 2>&1; then
       log "Termux bootstrap completed after attempt $attempt."
       return 0
     fi
@@ -96,6 +134,19 @@ if ! wait_for_termux_bootstrap; then
   echo "Termux did not finish bootstrap within the timeout." >&2
   exit 1
 fi
+
+log "Validating Termux command environment."
+termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
+termux_exec_id=$(termux_exec 'id' | tr -d '\r')
+termux_exec_path=$(termux_exec "printf '%s\n' \"\$PATH\"" | tr -d '\r')
+termux_pkg_path=$(termux_exec 'command -v pkg' | tr -d '\r')
+
+record TERMUX_EXEC_PWD "$termux_exec_pwd"
+record TERMUX_EXEC_ID "$termux_exec_id"
+record TERMUX_EXEC_PATH "$termux_exec_path"
+record TERMUX_PKG_PATH "$termux_pkg_path"
+
+install_termux_packages
 
 log "Collecting Termux runtime details."
 termux_arch=$(termux_exec 'uname -m' | tr -d '\r')
