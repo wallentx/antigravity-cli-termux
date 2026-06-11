@@ -105,6 +105,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Restore AVD snapshot cache
+        id: restore-avd-cache
         if: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT == 'true' }}
         uses: actions/cache/restore@v4
         with:
@@ -148,6 +149,7 @@ jobs:
           REQUIRE_AARCH64: ${{ inputs.require_aarch64 }}
           TERMUX_BOOTSTRAP_ATTEMPTS: 240
           TERMUX_RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
+          TERMUX_RESTORED_AVD_CACHE: ${{ steps.restore-avd-cache.outputs.cache-hit || false }}
           TERMUX_SAVE_SNAPSHOT: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT }}
           TERMUX_EXTRA_COMMANDS: ${{ inputs.extra_commands || '' }}
           TERMUX_EXTRA_COMMANDS_AT_START: ${{ inputs.extra_commands_at_start || false }}

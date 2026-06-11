@@ -82,6 +82,25 @@ dump_termux_state() {
 }
 
 install_termux_packages() {
+  if [[ "${TERMUX_RESTORED_AVD_CACHE:-false}" == "true" ]]; then
+    log "Validating restored Termux packages: ca-certificates glibc-repo glibc-runner"
+    # shellcheck disable=SC2016
+    if termux_exec '
+for package in ca-certificates glibc-repo glibc-runner; do
+  status=$(dpkg-query -W -f="${Status}" "$package" 2>/dev/null || true)
+  if [[ "$status" != "install ok installed" ]]; then
+    echo "$package is not installed: ${status:-missing}" >&2
+    exit 1
+  fi
+done
+'; then
+      record TERMUX_PACKAGES_INSTALLED "restored-snapshot"
+      return 0
+    fi
+
+    log "Restored snapshot is missing default packages; installing them."
+  fi
+
   log "Installing Termux packages: ca-certificates glibc-repo glibc-runner"
   termux_exec '
 pkg update -y
@@ -112,11 +131,27 @@ validate_release_tag() {
   fi
 }
 
+skip_standalone_smoke_if_unsupported() {
+  local smoke_name=$1
+  local record_key=$2
+
+  if [[ "${termux_arch:-unknown}" == "aarch64" ]]; then
+    return 1
+  fi
+
+  log "Skipping $smoke_name because Termux reported ${termux_arch:-unknown}; standalone archives require aarch64 glibc."
+  record "$record_key" "skipped-requires-aarch64"
+  return 0
+}
+
 test_host_standalone_archive() {
   local host_archive=${TERMUX_STANDALONE_ARCHIVE:-}
   local archive_name=antigravity-termux-standalone.tar.gz
 
   if [[ -z "$host_archive" ]]; then
+    return 0
+  fi
+  if skip_standalone_smoke_if_unsupported "PR artifact smoke test" TERMUX_PR_ARTIFACT_SMOKE; then
     return 0
   fi
   if [[ ! -f "$host_archive" ]]; then
@@ -149,6 +184,9 @@ test_release_standalone_archive() {
   fi
 
   validate_release_tag "$release_tag"
+  if skip_standalone_smoke_if_unsupported "release artifact smoke test" TERMUX_RELEASE_ARTIFACT_SMOKE; then
+    return 0
+  fi
   log "Testing standalone release artifact: $release_tag"
 
   termux_exec "
@@ -182,6 +220,11 @@ wait_for_termux_bootstrap() {
   return 1
 }
 
+use_restored_termux_bootstrap() {
+  [[ "${TERMUX_RESTORED_AVD_CACHE:-false}" == "true" ]] \
+    && run_as_termux_shell 'test -x files/usr/bin/bash' >/dev/null 2>&1
+}
+
 log "Starting Termux emulator probe."
 device_abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
 device_abilist=$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')
@@ -194,6 +237,7 @@ record TERMUX_APK_URL "$TERMUX_APK_URL"
 record TERMUX_BOOTSTRAP_ATTEMPTS "$bootstrap_attempts"
 record TERMUX_BOOTSTRAP_INTERVAL_SECONDS "$bootstrap_interval_seconds"
 record TERMUX_RESTORE_SNAPSHOT "${TERMUX_RESTORE_SNAPSHOT:-false}"
+record TERMUX_RESTORED_AVD_CACHE "${TERMUX_RESTORED_AVD_CACHE:-false}"
 record TERMUX_SAVE_SNAPSHOT "${TERMUX_SAVE_SNAPSHOT:-false}"
 record TERMUX_AVD_CACHE_PREFIX "${TERMUX_AVD_CACHE_PREFIX:-unknown}"
 record TERMUX_AVD_CACHE_KEY "${TERMUX_AVD_CACHE_KEY:-unknown}"
@@ -203,16 +247,22 @@ record TERMUX_RELEASE_TEST_TAG "${TERMUX_RELEASE_TEST_TAG:-none}"
 record TERMUX_EXTRA_COMMANDS_PRESENT "$([[ -n "${TERMUX_EXTRA_COMMANDS:-}" ]] && echo true || echo false)"
 record TERMUX_EXTRA_COMMANDS_AT_START "${TERMUX_EXTRA_COMMANDS_AT_START:-false}"
 
-log "Installing Termux APK: ${TERMUX_APK_NAME:-unknown}"
-adb install -r termux.apk
-adb shell pm grant com.termux android.permission.POST_NOTIFICATIONS || true
-log "Launching Termux."
-adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null
+if use_restored_termux_bootstrap; then
+  log "Using restored Termux bootstrap; skipping APK install and first-launch bootstrap."
+  record TERMUX_BOOTSTRAP_SOURCE "restored-snapshot"
+else
+  log "Installing Termux APK: ${TERMUX_APK_NAME:-unknown}"
+  adb install -r termux.apk
+  adb shell pm grant com.termux android.permission.POST_NOTIFICATIONS || true
+  log "Launching Termux."
+  adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null
 
-if ! wait_for_termux_bootstrap; then
-  dump_termux_state "bootstrap timeout"
-  echo "Termux did not finish bootstrap within the timeout." >&2
-  exit 1
+  if ! wait_for_termux_bootstrap; then
+    dump_termux_state "bootstrap timeout"
+    echo "Termux did not finish bootstrap within the timeout." >&2
+    exit 1
+  fi
+  record TERMUX_BOOTSTRAP_SOURCE "fresh-apk"
 fi
 
 log "Validating Termux command environment."
