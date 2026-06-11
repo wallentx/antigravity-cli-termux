@@ -87,7 +87,7 @@ install_termux_packages() {
     # shellcheck disable=SC2016
     if termux_exec '
 for package in ca-certificates glibc-repo glibc-runner; do
-  status=$(dpkg-query -W -f="${Status}" "$package" 2>/dev/null || true)
+  status=$(dpkg-query -W -f="\${Status}" "$package" 2>/dev/null || true)
   if [[ "$status" != "install ok installed" ]]; then
     echo "$package is not installed: ${status:-missing}" >&2
     exit 1
