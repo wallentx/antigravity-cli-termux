@@ -16,11 +16,6 @@ on:
         options:
           - stable
           - latest
-      require_aarch64:
-        description: Fail unless Termux reports aarch64
-        required: true
-        type: boolean
-        default: false
       restore_snapshot:
         description: Restore the latest cached emulator snapshot before running
         required: true
@@ -81,6 +76,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download Termux APK
+        if: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TERMUX_CHANNEL: ${{ env.TERMUX_CHANNEL_INPUT }}
@@ -146,7 +142,6 @@ jobs:
       - name: Probe Termux in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          REQUIRE_AARCH64: ${{ inputs.require_aarch64 }}
           TERMUX_BOOTSTRAP_ATTEMPTS: 240
           TERMUX_RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
           TERMUX_RESTORED_AVD_CACHE: ${{ steps.restore-avd-cache.outputs.cache-matched-key != '' }}

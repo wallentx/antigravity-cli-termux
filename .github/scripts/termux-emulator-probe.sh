@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 : "${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY is required}"
-: "${TERMUX_APK_URL:?TERMUX_APK_URL is required}"
 : "${TERMUX_HOME:?TERMUX_HOME is required}"
 : "${TERMUX_PREFIX:?TERMUX_PREFIX is required}"
 
@@ -82,25 +81,6 @@ dump_termux_state() {
 }
 
 install_termux_packages() {
-  if [[ "${TERMUX_RESTORED_AVD_CACHE:-false}" == "true" ]]; then
-    log "Validating restored Termux packages: ca-certificates glibc-repo glibc-runner"
-    # shellcheck disable=SC2016
-    if termux_exec '
-for package in ca-certificates glibc-repo glibc-runner; do
-  status=$(dpkg-query -W -f="\${Status}" "$package" 2>/dev/null || true)
-  if [[ "$status" != "install ok installed" ]]; then
-    echo "$package is not installed: ${status:-missing}" >&2
-    exit 1
-  fi
-done
-'; then
-      record TERMUX_PACKAGES_INSTALLED "restored-snapshot"
-      return 0
-    fi
-
-    log "Restored snapshot is missing default packages; installing them."
-  fi
-
   log "Installing Termux packages: ca-certificates glibc-repo glibc-runner"
   termux_exec '
 pkg update -y
@@ -122,36 +102,11 @@ run_extra_termux_commands() {
   record TERMUX_EXTRA_COMMANDS_RAN "$phase"
 }
 
-validate_release_tag() {
-  local release_tag=$1
-
-  if [[ -z "$release_tag" || "$release_tag" == -* || ! "$release_tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    echo "Release tag contains unsupported characters: $release_tag" >&2
-    return 1
-  fi
-}
-
-skip_standalone_smoke_if_unsupported() {
-  local smoke_name=$1
-  local record_key=$2
-
-  if [[ "${termux_arch:-unknown}" == "aarch64" ]]; then
-    return 1
-  fi
-
-  log "Skipping $smoke_name because Termux reported ${termux_arch:-unknown}; standalone archives require aarch64 glibc."
-  record "$record_key" "skipped-requires-aarch64"
-  return 0
-}
-
 test_host_standalone_archive() {
   local host_archive=${TERMUX_STANDALONE_ARCHIVE:-}
   local archive_name=antigravity-termux-standalone.tar.gz
 
   if [[ -z "$host_archive" ]]; then
-    return 0
-  fi
-  if skip_standalone_smoke_if_unsupported "PR artifact smoke test" TERMUX_PR_ARTIFACT_SMOKE; then
     return 0
   fi
   if [[ ! -f "$host_archive" ]]; then
@@ -178,22 +133,21 @@ tar -xzf antigravity-termux-standalone.tar.gz
 
 test_release_standalone_archive() {
   local release_tag=${TERMUX_RELEASE_TEST_TAG:-}
+  local quoted_release_tag
 
   if [[ -z "$release_tag" ]]; then
     return 0
   fi
 
-  validate_release_tag "$release_tag"
-  if skip_standalone_smoke_if_unsupported "release artifact smoke test" TERMUX_RELEASE_ARTIFACT_SMOKE; then
-    return 0
-  fi
   log "Testing standalone release artifact: $release_tag"
+  printf -v quoted_release_tag '%q' "$release_tag"
 
   termux_exec "
+RELEASE_TAG=$quoted_release_tag
 rm -rf \"\$HOME/agy-release-smoke\"
 mkdir -p \"\$HOME/agy-release-smoke\"
 cd \"\$HOME/agy-release-smoke\"
-curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/$release_tag/antigravity-termux-standalone.tar.gz
+curl -fsSLO \"https://github.com/wallentx/antigravity-cli-termux/releases/download/\${RELEASE_TAG}/antigravity-termux-standalone.tar.gz\"
 tar -xzf antigravity-termux-standalone.tar.gz
 ./bin/agy --help
 "
@@ -221,8 +175,7 @@ wait_for_termux_bootstrap() {
 }
 
 use_restored_termux_bootstrap() {
-  [[ "${TERMUX_RESTORED_AVD_CACHE:-false}" == "true" ]] \
-    && run_as_termux_shell 'test -x files/usr/bin/bash' >/dev/null 2>&1
+  [[ "${TERMUX_RESTORE_SNAPSHOT:-false}" == "true" ]]
 }
 
 log "Starting Termux emulator probe."
@@ -233,7 +186,7 @@ record ANDROID_CPU_ABILIST "$device_abilist"
 record TERMUX_CHANNEL "${TERMUX_CHANNEL:-unknown}"
 record TERMUX_RELEASE_TAG "${TERMUX_RELEASE_TAG:-unknown}"
 record TERMUX_APK_NAME "${TERMUX_APK_NAME:-unknown}"
-record TERMUX_APK_URL "$TERMUX_APK_URL"
+record TERMUX_APK_URL "${TERMUX_APK_URL:-none}"
 record TERMUX_BOOTSTRAP_ATTEMPTS "$bootstrap_attempts"
 record TERMUX_BOOTSTRAP_INTERVAL_SECONDS "$bootstrap_interval_seconds"
 record TERMUX_RESTORE_SNAPSHOT "${TERMUX_RESTORE_SNAPSHOT:-false}"
@@ -281,10 +234,10 @@ if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" == "true" ]]; then
   run_extra_termux_commands start
 fi
 
-install_termux_packages
-
-if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" != "true" ]]; then
-  run_extra_termux_commands end
+if [[ "${TERMUX_RESTORE_SNAPSHOT:-false}" == "true" ]]; then
+  record TERMUX_PACKAGE_SETUP "skipped-restored-snapshot"
+else
+  install_termux_packages
 fi
 
 log "Collecting Termux runtime details."
@@ -299,6 +252,10 @@ record TERMUX_AARCH64_GLIBC_LOADER "$termux_loader_state"
 test_host_standalone_archive
 test_release_standalone_archive
 
+if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" != "true" ]]; then
+  run_extra_termux_commands end
+fi
+
 {
   echo "### Termux Emulator Probe"
   echo ""
@@ -308,32 +265,3 @@ test_release_standalone_archive
   sed 's/|/\\|/g; s/^\([^=]*\)=\(.*\)$/| `\1` | `\2` |/' "$probe_file"
   echo ""
 } >> "$GITHUB_STEP_SUMMARY"
-
-if [[ "$termux_arch" != "aarch64" && "${REQUIRE_AARCH64:-false}" == "true" ]]; then
-  echo "Termux reported $termux_arch, but require_aarch64 was enabled." >&2
-  exit 1
-fi
-
-if [[ "$termux_arch" != "aarch64" ]]; then
-  echo "Termux reported $termux_arch; skipping the v1.0.6 aarch64 release smoke test."
-  exit 0
-fi
-
-log "Running aarch64 release smoke test."
-cat > termux-release-smoke.sh <<'TERMUX_RELEASE_SMOKE'
-set -euo pipefail
-
-mkdir -p "$HOME/agy-smoke"
-cd "$HOME/agy-smoke"
-
-pkg update -y
-pkg install ca-certificates glibc-repo -y
-pkg install glibc-runner -y
-curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/v1.0.6/antigravity-termux-standalone.tar.gz
-tar -xzf antigravity-termux-standalone.tar.gz
-./bin/agy --help
-TERMUX_RELEASE_SMOKE
-
-adb push termux-release-smoke.sh /data/local/tmp/termux-release-smoke.sh >/dev/null
-adb shell chmod 0644 /data/local/tmp/termux-release-smoke.sh
-termux_exec 'bash /data/local/tmp/termux-release-smoke.sh'
