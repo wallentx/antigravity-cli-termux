@@ -50,7 +50,12 @@ termux_exec() {
     printf 'export PREFIX=%q\n' "$TERMUX_PREFIX"
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
-    printf 'export PATH=%q\n' "$TERMUX_PREFIX/bin:/system/bin:/system/xbin"
+    printf 'export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
+    printf 'pkg() (\n'
+    printf '  export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
+    # shellcheck disable=SC2016
+    printf '  source "$PREFIX/bin/pkg" "$@"\n'
+    printf ')\n'
     printf "unset LD_PRELOAD LD_LIBRARY_PATH\n"
     printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
@@ -86,10 +91,17 @@ install_termux_packages() {
   log "Installing Termux packages: ca-certificates glibc-repo glibc-runner"
   # shellcheck disable=SC2016
   termux_exec '
-dpkg --print-architecture
-test "$(dpkg --print-architecture)" = "aarch64"
+echo "[termux-probe] Package setup PATH=$PATH"
+echo "[termux-probe] Package setup dpkg=$PREFIX/bin/dpkg"
+echo "[termux-probe] Package setup pkg=$PREFIX/bin/pkg"
+type pkg
+"$PREFIX/bin/dpkg" --print-architecture
+test "$("$PREFIX/bin/dpkg" --print-architecture)" = "aarch64"
+echo "[termux-probe] Updating Termux package metadata"
 pkg update -y
+echo "[termux-probe] Installing ca-certificates and glibc-repo"
 pkg install ca-certificates glibc-repo -y
+echo "[termux-probe] Installing glibc-runner"
 pkg install glibc-runner -y
 test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 '
@@ -255,7 +267,8 @@ log "Validating Termux command environment."
 termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
 termux_exec_id=$(termux_exec '/system/bin/id' | tr -d '\r')
 termux_exec_path=$(termux_exec "printf '%s\n' \"\$PATH\"" | tr -d '\r')
-termux_pkg_path=$(termux_exec 'command -v pkg' | tr -d '\r')
+# shellcheck disable=SC2016
+termux_pkg_path=$(termux_exec 'printf "%s\n" "$PREFIX/bin/pkg"' | tr -d '\r')
 
 record TERMUX_EXEC_PWD "$termux_exec_pwd"
 record TERMUX_EXEC_ID "$termux_exec_id"
@@ -274,7 +287,8 @@ fi
 
 log "Collecting Termux runtime details."
 termux_arch=$(termux_exec '/system/bin/uname -m' | tr -d '\r')
-termux_dpkg_arch=$(termux_exec 'dpkg --print-architecture 2>/dev/null || true' | tr -d '\r')
+# shellcheck disable=SC2016
+termux_dpkg_arch=$(termux_exec '"$PREFIX/bin/dpkg" --print-architecture 2>/dev/null || true' | tr -d '\r')
 termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 && echo present || echo missing' | tr -d '\r')
 termux_x86_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-x86-64.so.2 && echo present || echo missing' | tr -d '\r')
 
