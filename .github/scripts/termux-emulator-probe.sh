@@ -253,7 +253,7 @@ fi
 
 log "Validating Termux command environment."
 termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
-termux_exec_id=$(termux_exec 'id' | tr -d '\r')
+termux_exec_id=$(termux_exec '/system/bin/id' | tr -d '\r')
 termux_exec_path=$(termux_exec "printf '%s\n' \"\$PATH\"" | tr -d '\r')
 termux_pkg_path=$(termux_exec 'command -v pkg' | tr -d '\r')
 
@@ -273,7 +273,7 @@ else
 fi
 
 log "Collecting Termux runtime details."
-termux_arch=$(termux_exec 'uname -m' | tr -d '\r')
+termux_arch=$(termux_exec '/system/bin/uname -m' | tr -d '\r')
 termux_dpkg_arch=$(termux_exec 'dpkg --print-architecture 2>/dev/null || true' | tr -d '\r')
 termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 && echo present || echo missing' | tr -d '\r')
 termux_x86_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-x86-64.so.2 && echo present || echo missing' | tr -d '\r')
