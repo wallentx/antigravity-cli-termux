@@ -64,12 +64,13 @@ jobs:
     env:
       TERMUX_HOME: /data/data/com.termux/files/home
       TERMUX_PREFIX: /data/data/com.termux/files/usr
+      TERMUX_INSTALL_ABI: arm64-v8a
       TERMUX_CHANNEL_INPUT: ${{ inputs.termux_channel || 'stable' }}
       TERMUX_RESTORE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_run' || inputs.restore_snapshot }}
       TERMUX_SAVE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.save_snapshot }}
       TERMUX_RELEASE_TEST_TAG: ${{ inputs.release_tag || '' }}
-      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel || 'stable' }}-
-      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-
+      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Check out repository
@@ -80,6 +81,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TERMUX_CHANNEL: ${{ env.TERMUX_CHANNEL_INPUT }}
+          TERMUX_INSTALL_ABI: ${{ env.TERMUX_INSTALL_ABI }}
         run: |
           ./.github/scripts/download-termux-apk.sh
 
@@ -143,6 +145,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           TERMUX_BOOTSTRAP_ATTEMPTS: 240
+          TERMUX_INSTALL_ABI: ${{ env.TERMUX_INSTALL_ABI }}
           TERMUX_RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
           TERMUX_RESTORED_AVD_CACHE: ${{ steps.restore-avd-cache.outputs.cache-matched-key != '' }}
           TERMUX_RESTORED_AVD_CACHE_KEY: ${{ steps.restore-avd-cache.outputs.cache-matched-key || '' }}

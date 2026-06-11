@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 bootstrap_attempts="${TERMUX_BOOTSTRAP_ATTEMPTS:-240}"
 bootstrap_interval_seconds="${TERMUX_BOOTSTRAP_INTERVAL_SECONDS:-2}"
+termux_install_abi="${TERMUX_INSTALL_ABI:-arm64-v8a}"
 if ! [[ "$bootstrap_attempts" =~ ^[0-9]+$ && "$bootstrap_interval_seconds" =~ ^[0-9]+$ ]]; then
   echo "TERMUX_BOOTSTRAP_ATTEMPTS and TERMUX_BOOTSTRAP_INTERVAL_SECONDS must be positive integers." >&2
   exit 1
@@ -82,10 +83,14 @@ dump_termux_state() {
 
 install_termux_packages() {
   log "Installing Termux packages: ca-certificates glibc-repo glibc-runner"
+  # shellcheck disable=SC2016
   termux_exec '
+dpkg --print-architecture
+test "$(dpkg --print-architecture)" = "aarch64"
 pkg update -y
 pkg install ca-certificates glibc-repo -y
 pkg install glibc-runner -y
+test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 '
   record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
 }
@@ -211,6 +216,7 @@ record TERMUX_CHANNEL "${TERMUX_CHANNEL:-unknown}"
 record TERMUX_RELEASE_TAG "${TERMUX_RELEASE_TAG:-unknown}"
 record TERMUX_APK_NAME "${TERMUX_APK_NAME:-unknown}"
 record TERMUX_APK_URL "${TERMUX_APK_URL:-none}"
+record TERMUX_INSTALL_ABI "$termux_install_abi"
 record TERMUX_BOOTSTRAP_ATTEMPTS "$bootstrap_attempts"
 record TERMUX_BOOTSTRAP_INTERVAL_SECONDS "$bootstrap_interval_seconds"
 record TERMUX_RESTORE_SNAPSHOT "${TERMUX_RESTORE_SNAPSHOT:-false}"
@@ -230,8 +236,9 @@ if use_restored_termux_bootstrap; then
   record TERMUX_BOOTSTRAP_SOURCE "restored-snapshot"
 else
   log "Installing Termux APK: ${TERMUX_APK_NAME:-unknown}"
-  adb install -r termux.apk
+  adb install -r --abi "$termux_install_abi" termux.apk
   adb shell pm grant com.termux android.permission.POST_NOTIFICATIONS || true
+  dump_termux_state "after apk install"
   log "Launching Termux."
   adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null
 
