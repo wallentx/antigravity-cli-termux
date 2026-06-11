@@ -16,6 +16,26 @@ on:
         required: true
         type: boolean
         default: false
+      restore_snapshot:
+        description: Restore the latest cached emulator snapshot before running
+        required: true
+        type: boolean
+        default: false
+      save_snapshot:
+        description: Save the emulator snapshot after a successful run
+        required: true
+        type: boolean
+        default: false
+      extra_commands:
+        description: Additional Termux commands to run inside the emulator
+        required: false
+        type: string
+        default: ""
+      extra_commands_at_start:
+        description: Run additional commands before default package setup
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +57,8 @@ jobs:
     env:
       TERMUX_HOME: /data/data/com.termux/files/home
       TERMUX_PREFIX: /data/data/com.termux/files/usr
+      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel }}-
+      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-${{ inputs.termux_channel }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Check out repository
@@ -58,20 +80,71 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Restore AVD snapshot cache
+        if: ${{ inputs.restore_snapshot }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android/avd
+            ~/.android/adb*
+          key: ${{ env.TERMUX_AVD_CACHE_KEY }}
+          restore-keys: |
+            ${{ env.TERMUX_AVD_CACHE_PREFIX }}
+
+      - name: Configure emulator options
+        id: emulator-options
+        env:
+          RESTORE_SNAPSHOT: ${{ inputs.restore_snapshot }}
+          SAVE_SNAPSHOT: ${{ inputs.save_snapshot }}
+        run: |
+          set -eu
+
+          emulator_options=()
+          if [[ "$RESTORE_SNAPSHOT" != "true" ]]; then
+            emulator_options+=("-no-snapshot-load")
+          fi
+          if [[ "$SAVE_SNAPSHOT" != "true" ]]; then
+            emulator_options+=("-no-snapshot-save")
+          fi
+          emulator_options+=(
+            "-no-window"
+            "-gpu" "swiftshader_indirect"
+            "-noaudio"
+            "-no-boot-anim"
+            "-camera-back" "none"
+            "-camera-front" "none"
+          )
+
+          printf 'options=%s\n' "${emulator_options[*]}" >> "$GITHUB_OUTPUT"
+          printf 'Emulator options: %s\n' "${emulator_options[*]}"
+
       - name: Probe Termux in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
           REQUIRE_AARCH64: ${{ inputs.require_aarch64 }}
           TERMUX_BOOTSTRAP_ATTEMPTS: 240
+          TERMUX_RESTORE_SNAPSHOT: ${{ inputs.restore_snapshot }}
+          TERMUX_SAVE_SNAPSHOT: ${{ inputs.save_snapshot }}
+          TERMUX_EXTRA_COMMANDS: ${{ inputs.extra_commands }}
+          TERMUX_EXTRA_COMMANDS_AT_START: ${{ inputs.extra_commands_at_start }}
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_5
           force-avd-creation: false
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: ${{ steps.emulator-options.outputs.options }}
           disable-animations: true
           script: bash .github/scripts/termux-emulator-probe.sh
+
+      - name: Save AVD snapshot cache
+        if: ${{ inputs.save_snapshot && success() }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd
+            ~/.android/adb*
+          key: ${{ env.TERMUX_AVD_CACHE_KEY }}
 
       - name: Upload emulator diagnostics
         if: always()

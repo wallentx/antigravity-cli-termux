@@ -91,6 +91,18 @@ pkg install glibc-runner -y
   record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
 }
 
+run_extra_termux_commands() {
+  local phase=$1
+
+  if [[ -z "${TERMUX_EXTRA_COMMANDS:-}" ]]; then
+    return 0
+  fi
+
+  log "Running additional Termux commands at $phase."
+  termux_exec "$TERMUX_EXTRA_COMMANDS"
+  record TERMUX_EXTRA_COMMANDS_RAN "$phase"
+}
+
 wait_for_termux_bootstrap() {
   local attempt
 
@@ -122,6 +134,12 @@ record TERMUX_APK_NAME "${TERMUX_APK_NAME:-unknown}"
 record TERMUX_APK_URL "$TERMUX_APK_URL"
 record TERMUX_BOOTSTRAP_ATTEMPTS "$bootstrap_attempts"
 record TERMUX_BOOTSTRAP_INTERVAL_SECONDS "$bootstrap_interval_seconds"
+record TERMUX_RESTORE_SNAPSHOT "${TERMUX_RESTORE_SNAPSHOT:-false}"
+record TERMUX_SAVE_SNAPSHOT "${TERMUX_SAVE_SNAPSHOT:-false}"
+record TERMUX_AVD_CACHE_PREFIX "${TERMUX_AVD_CACHE_PREFIX:-unknown}"
+record TERMUX_AVD_CACHE_KEY "${TERMUX_AVD_CACHE_KEY:-unknown}"
+record TERMUX_EXTRA_COMMANDS_PRESENT "$([[ -n "${TERMUX_EXTRA_COMMANDS:-}" ]] && echo true || echo false)"
+record TERMUX_EXTRA_COMMANDS_AT_START "${TERMUX_EXTRA_COMMANDS_AT_START:-false}"
 
 log "Installing Termux APK: ${TERMUX_APK_NAME:-unknown}"
 adb install -r termux.apk
@@ -146,7 +164,15 @@ record TERMUX_EXEC_ID "$termux_exec_id"
 record TERMUX_EXEC_PATH "$termux_exec_path"
 record TERMUX_PKG_PATH "$termux_pkg_path"
 
+if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" == "true" ]]; then
+  run_extra_termux_commands start
+fi
+
 install_termux_packages
+
+if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" != "true" ]]; then
+  run_extra_termux_commands end
+fi
 
 log "Collecting Termux runtime details."
 termux_arch=$(termux_exec 'uname -m' | tr -d '\r')
