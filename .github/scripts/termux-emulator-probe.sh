@@ -51,7 +51,8 @@ termux_exec() {
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
     printf 'export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
-    printf "unset LD_PRELOAD LD_LIBRARY_PATH\n"
+    printf "unset LD_PRELOAD\n"
+    printf 'export LD_LIBRARY_PATH=%q\n' "$TERMUX_PREFIX/lib"
     printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
     printf '%s\n' "$command_line"
@@ -62,7 +63,7 @@ termux_exec() {
     return 1
   fi
 
-  if ! run_as_termux_shell "cp $remote_tmp $remote_script && chmod 700 $remote_script && $TERMUX_PREFIX/bin/bash $remote_script"; then
+  if ! run_as_termux_shell "cp $remote_tmp $remote_script && chmod 700 $remote_script && unset LD_PRELOAD && export LD_LIBRARY_PATH=$TERMUX_PREFIX/lib && $TERMUX_PREFIX/bin/bash $remote_script"; then
     rm -f "$local_script"
     return 1
   fi
@@ -267,11 +268,14 @@ termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
 termux_exec_id=$(termux_exec '/system/bin/id' | tr -d '\r')
 termux_exec_path=$(termux_exec "printf '%s\n' \"\$PATH\"" | tr -d '\r')
 # shellcheck disable=SC2016
+termux_exec_ld_library_path=$(termux_exec 'printf "%s\n" "${LD_LIBRARY_PATH:-}"' | tr -d '\r')
+# shellcheck disable=SC2016
 termux_pkg_path=$(termux_exec 'printf "%s\n" "$PREFIX/bin/pkg"' | tr -d '\r')
 
 record TERMUX_EXEC_PWD "$termux_exec_pwd"
 record TERMUX_EXEC_ID "$termux_exec_id"
 record TERMUX_EXEC_PATH "$termux_exec_path"
+record TERMUX_EXEC_LD_LIBRARY_PATH "$termux_exec_ld_library_path"
 record TERMUX_PKG_PATH "$termux_pkg_path"
 
 if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" == "true" ]]; then
