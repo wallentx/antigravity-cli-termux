@@ -171,6 +171,7 @@ jobs:
       - name: Capture emulator diagnostic files
         if: always()
         run: |
+          docker logs dockerify-android > termux-dockerify-container-logs.txt 2>/dev/null || true
           if adb devices | grep -q -E "\bdevice\b"; then
             adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
             for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
