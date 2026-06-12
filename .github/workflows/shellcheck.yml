@@ -23,5 +23,30 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Install ShellCheck
+        env:
+          SC_URL: https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl --silent --location "$SC_URL" \
+            | tar --extract --xz --directory="$HOME/.local/bin" \
+                --strip-components=1 shellcheck-v0.11.0/shellcheck
+          shellcheck --version
+
       - name: Run ShellCheck
-        uses: bewuethr/shellcheck-action@v2.3.0
+        run: |
+          mapfile -t files < <(
+            git ls-files \
+              '*.sh' \
+              '*.bash' \
+              '*.ksh' \
+              ':!:examples/**'
+          )
+
+          if (( ${#files[@]} == 0 )); then
+            echo "No shell scripts found."
+            exit 0
+          fi
+
+          shellcheck --color=always "${files[@]}"

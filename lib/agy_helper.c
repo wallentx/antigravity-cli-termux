@@ -1,4 +1,3 @@
-#include "mmap_va39_fix_bytes.h"
 #include <ctype.h>
 #include <errno.h>
 #include <libgen.h>
@@ -6,8 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #ifndef AGY_TERMUX_VERSION
@@ -89,25 +86,28 @@ void check_and_perform_update(const char *dir) {
         if (response == 'y' || response == 'Y') {
             printf("\n[agy-termux] Downloading and applying standalone update...\n");
 
-            // Runs a subshell command to download the new tar.gz, extract it, and overwrite files
-            // Uses dir/.. to target the parent directory containing bin/ and lib/
-            char update_cmd[1024];
+            // Runs a subshell command to download into a staging directory, then replace only
+            // the live twin binaries. Avoid extracting the archive over an existing bin symlink.
+            char update_cmd[2048];
             written = snprintf(
                 update_cmd, sizeof(update_cmd),
-                "cd \"%s/..\" && "
-                "curl -fsSLO "
+                "tmp=$(mktemp -d \"${TMPDIR:-%s/../tmp}/agy-update.XXXXXX\") && "
+                "trap 'rm -rf \"$tmp\"' EXIT && "
+                "curl -fsSL -o \"$tmp/antigravity-termux-standalone.tar.gz\" "
                 "\"https://github.com/wallentx/antigravity-cli-termux/releases/download/%s/"
                 "antigravity-termux-standalone.tar.gz\" && "
-                "tar -xzf antigravity-termux-standalone.tar.gz && "
-                "rm antigravity-termux-standalone.tar.gz",
-                dir, latest_tag);
+                "tar -xzf \"$tmp/antigravity-termux-standalone.tar.gz\" -C \"$tmp\" "
+                "agy agy.va39 && "
+                "install -m 0755 \"$tmp/agy\" \"%s/agy\" && "
+                "install -m 0755 \"$tmp/agy.va39\" \"%s/agy.va39\"",
+                dir, latest_tag, dir, dir);
             if (written < 0 || written >= (int)sizeof(update_cmd)) {
                 printf("[agy-termux] Error: Could not construct update command.\n");
                 return;
             }
 
             // Intentionally uses the shell so the update can run as one transactional command.
-            // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+            // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c,cert-err34-c,cert-str02-c)
             int status = system(update_cmd);
             if (status == 0) {
                 printf("[agy-termux] Update completed successfully! Please restart the CLI.\n");
@@ -122,119 +122,100 @@ void check_and_perform_update(const char *dir) {
     }
 }
 
-// Returns the path of the unpacked .so on success, NULL on failure
-const char *unpack_mmap_fixer(void) {
-    static char unpacked_path[PATH_MAX];
+static int is_native_termux(void) {
+    const char *termux_version = getenv("TERMUX_VERSION");
+    const char *prefix = getenv("PREFIX");
+    char bin_path[PATH_MAX];
+    int written = 0;
 
-    // Resolve temp directory priority: $TMPDIR -> /tmp
-    const char *tmp = getenv("TMPDIR");
-    if (!tmp || tmp[0] == '\0') {
-        tmp = "/tmp";
+    if (termux_version == NULL || termux_version[0] == '\0') {
+        return 0;
+    }
+    if (prefix == NULL || prefix[0] == '\0') {
+        return 0;
+    }
+    written = snprintf(bin_path, sizeof(bin_path), "%s/bin", prefix);
+    if (written < 0 || written >= (int)sizeof(bin_path)) {
+        return 0;
+    }
+    if (access(bin_path, F_OK) != 0) {
+        return 0;
     }
 
-    int written = snprintf(unpacked_path, sizeof(unpacked_path), "%s/libmmap_va39_fix.so", tmp);
-    if (written < 0 || written >= (int)sizeof(unpacked_path)) {
-        return NULL;
-    }
+    return 1;
+}
 
-    // Check if the file already exists and matches the expected size to avoid redundant writes
-    struct stat st;
-    if (stat(unpacked_path, &st) == 0 && st.st_size == (off_t)mmap_va39_fix_so_len) {
-        return unpacked_path;
-    }
-
-    // Unpack the bytes
-    FILE *fp = fopen(unpacked_path, "wb");
-    if (!fp) {
-        return NULL;
-    }
-
-    size_t written_bytes = fwrite(mmap_va39_fix_so, 1, mmap_va39_fix_so_len, fp);
-
-    if (fclose(fp) != 0 || written_bytes != mmap_va39_fix_so_len) {
-        unlink(unpacked_path);
-        return NULL;
-    }
-
-    // Ensure it is executable
-    if (chmod(unpacked_path, 0755) != 0) {
-        return NULL;
-    }
-
-    return unpacked_path;
+static void print_non_termux_message(void) {
+    (void)fprintf(stderr, "[agy-termux] This standalone port is only for native Termux.\n"
+                          "[agy-termux] PRoot environments can use Google's official "
+                          "Antigravity CLI binary directly.\n"
+                          "[agy-termux] Install it with:\n"
+                          "  curl -fsSL https://antigravity.google/cli/install.sh | bash\n");
 }
 
 int main(int argc, char **argv) {
-    // 1. Consolidate variables at top to avoid shadowing (-Wshadow)
     char exec_path[PATH_MAX];
     char lib_path[PATH_MAX * 3];
     char patched_bin[PATH_MAX];
-    const char *loader = "/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1";
+    char dynamic_loader[PATH_MAX];
+    char cert_path[PATH_MAX];
+    char prefix_path[PATH_MAX];
+    const char *prefix = getenv("PREFIX");
+    const char *loader = NULL;
     const char *dir = NULL;
-    const char *fixer_path = NULL;
     char **new_argv = NULL;
-    int is_termux = 0;
     int arg_idx = 0;
     int written = 0;
     ssize_t read_len = 0;
 
-    // Detect if running in native Termux
-    is_termux = (access("/data/data/com.termux/files/usr/bin", F_OK) == 0);
-
-    // 2. Clear conflicting Android Bionic preloads and search paths
-    if (is_termux) {
-        unsetenv("LD_PRELOAD");
+    if (!is_native_termux()) {
+        print_non_termux_message();
+        return 1;
     }
+    written = snprintf(prefix_path, sizeof(prefix_path), "%s", prefix);
+    if (written < 0 || written >= (int)sizeof(prefix_path)) {
+        return 1;
+    }
+    written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
+                       prefix_path);
+    if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
+        return 1;
+    }
+    loader = dynamic_loader;
+
+    if (access(loader, F_OK) != 0) {
+        (void)fprintf(stderr, "[agy-termux] Missing Termux glibc loader: %s\n", loader);
+        (void)fprintf(stderr,
+                      "[agy-termux] You may need to install the glibc-repo and glibc packages.\n");
+        return 1;
+    }
+
+    // Clear conflicting Android Bionic preloads and search paths.
+    unsetenv("LD_PRELOAD");
     unsetenv("LD_LIBRARY_PATH");
 
-    // 3. Set dynamic Go resolver and SSL configurations
+    // Set dynamic Go resolver and SSL configuration.
     setenv("GODEBUG", "netdns=cgo", 1);
-    if (is_termux) {
-        setenv("SSL_CERT_FILE", "/data/data/com.termux/files/usr/etc/tls/cert.pem", 1);
-    } else if (access("/etc/ssl/certs/ca-certificates.crt", F_OK) == 0) {
-        setenv("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt", 1);
+    written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix_path);
+    if (written < 0 || written >= (int)sizeof(cert_path)) {
+        return 1;
     }
+    setenv("SSL_CERT_FILE", cert_path, 1);
 
-    // 4. Resolve executable directory
     read_len = readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
-    if (read_len == -1) {
+    if (read_len < 0 || read_len >= (ssize_t)sizeof(exec_path)) {
         return 1;
     }
     exec_path[read_len] = '\0';
     dir = dirname(exec_path);
 
-    // 5. Intercept 'update' subcommand
     if (argc >= 2 && strcmp(argv[1], "update") == 0) {
         check_and_perform_update(dir);
         return 0;
     }
 
-    // 6. Handle interposer unpacking in non-Termux (chroot) environments
-    if (!is_termux) {
-        fixer_path = unpack_mmap_fixer();
-        if (!fixer_path) {
-            (void)fprintf(stderr,
-                          "[ERR] Failed to extract PRoot compatibility layer. Please check /tmp "
-                          "permissions.\n");
-            return 1;
-        }
-    }
-
-    // 7. Resolve dynamic loader path
-    if (access(loader, F_OK) != 0) {
-        loader = "/lib/ld-linux-aarch64.so.1";
-    }
-
-    // 8. Construct relocatable library search path
-    if (is_termux) {
-        written = snprintf(lib_path, sizeof(lib_path),
-                           "%s/../lib:/data/data/com.termux/files/usr/glibc/lib", dir);
-    } else {
-        written = snprintf(lib_path, sizeof(lib_path),
-                           "%s/../lib:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/lib64:/"
-                           "usr/lib64:/lib:/usr/lib",
-                           dir);
-    }
+    // Construct relocatable library search path for native Termux glibc.
+    written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:%s/glibc/lib", dir, prefix_path);
     if (written < 0 || written >= (int)sizeof(lib_path)) {
         return 1;
     }
@@ -245,10 +226,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // 9. Construct new argument array
-    // We allocate enough space for: loader + "--preload" + fixer_path + "--library-path" + lib_path
-    // + patched_bin + user args + NULL
-    int new_argc = argc + 8;
+    // loader + "--library-path" + lib_path + patched_bin + user args + NULL
+    int new_argc = argc + 4;
     new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
     if (!new_argv) {
         return 1;
@@ -256,13 +235,6 @@ int main(int argc, char **argv) {
 
     arg_idx = 0;
     new_argv[arg_idx++] = (char *)loader;
-
-    // Inject the interposer dynamic library as a preload if unpacked successfully
-    if (fixer_path) {
-        new_argv[arg_idx++] = "--preload";
-        new_argv[arg_idx++] = (char *)fixer_path;
-    }
-
     new_argv[arg_idx++] = "--library-path";
     new_argv[arg_idx++] = lib_path;
     new_argv[arg_idx++] = patched_bin;
@@ -272,7 +244,7 @@ int main(int argc, char **argv) {
     }
     new_argv[arg_idx] = NULL;
 
-    // 10. Execute the glibc dynamic loader
+    // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
     if (execv(loader, new_argv) == -1) {
         perror("[agy-termux] execv failed");
         free(new_argv);
