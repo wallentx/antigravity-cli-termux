@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: ""
+      dockerify_android_image:
+        description: Dockerify Android image reference
+        required: false
+        type: string
+        default: shmayro/dockerify-android:latest
 
 permissions:
   actions: read
@@ -55,6 +60,7 @@ jobs:
       TERMUX_INSTALL_ABI: arm64-v8a
       TERMUX_CHANNEL_INPUT: ${{ inputs.termux_channel || 'stable' }}
       TERMUX_RELEASE_TEST_TAG: ${{ inputs.release_tag || '' }}
+      DOCKERIFY_ANDROID_IMAGE: ${{ inputs.dockerify_android_image || 'shmayro/dockerify-android:latest' }}
 
     steps:
       - name: Check out repository
@@ -80,28 +86,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y adb
+          echo "Using Dockerify Android image: $DOCKERIFY_ANDROID_IMAGE"
           
-          # Start dockerify-android container with KVM if available
           if [ -e /dev/kvm ]; then
             echo "KVM is available. Starting with hardware acceleration."
-            docker run -d \
-              --name dockerify-android \
-              --privileged \
-              --device /dev/kvm \
-              -p 5555:5555 \
-              -p 8000:8000 \
-              shmayro/dockerify-android:latest
           else
-            echo "KVM is NOT available. Setting up QEMU emulation for amd64 image."
-            sudo apt-get install -y qemu-user-static binfmt-support
-            docker run -d \
-              --name dockerify-android \
-              --privileged \
-              --platform linux/amd64 \
-              -p 5555:5555 \
-              -p 8000:8000 \
-              shmayro/dockerify-android:latest
+            echo "KVM is not available. Starting without hardware acceleration."
           fi
+          docker run -d \
+            --name dockerify-android \
+            --privileged \
+            -p 5555:5555 \
+            -p 8000:8000 \
+            "$DOCKERIFY_ANDROID_IMAGE"
+          docker image inspect "$DOCKERIFY_ANDROID_IMAGE" \
+            --format 'Dockerify image={{.RepoTags}} id={{.Id}} created={{.Created}}' || true
           
           echo "Giving emulator time to initialize..."
           sleep 20
