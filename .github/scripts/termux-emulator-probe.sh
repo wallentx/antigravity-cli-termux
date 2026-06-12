@@ -90,7 +90,7 @@ termux_exec() {
 
   rm -f "$local_script"
 
-  if ! run_as_termux_shell "/system/bin/am start-foreground-service -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH $TERMUX_PREFIX/bin/bash --esa com.termux.RUN_COMMAND_ARGUMENTS $remote_script --es com.termux.RUN_COMMAND_WORKDIR $TERMUX_HOME --es com.termux.RUN_COMMAND_RUNNER app-shell" >/dev/null; then
+  if ! run_as_termux_shell "/system/bin/am start-foreground-service --user 0 -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH $TERMUX_PREFIX/bin/bash --esa com.termux.RUN_COMMAND_ARGUMENTS $remote_script --es com.termux.RUN_COMMAND_WORKDIR $TERMUX_HOME --es com.termux.RUN_COMMAND_RUNNER app-shell" >/dev/null; then
     rm -f "$local_script"
     return 1
   fi
