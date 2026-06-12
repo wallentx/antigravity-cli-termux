@@ -67,7 +67,7 @@ termux_exec() {
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
     printf 'export PATH=%q\n' "$TERMUX_PREFIX/bin:/system/bin:/system/xbin"
-    printf "mkdir -p \"\$TMPDIR\"\n"
+    printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
     printf '%s\n' "$command_line"
     printf ') > %q 2> %q\n' "$remote_stdout" "$remote_stderr"
