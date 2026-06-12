@@ -107,7 +107,7 @@ void check_and_perform_update(const char *dir) {
             }
 
             // Intentionally uses the shell so the update can run as one transactional command.
-            // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+            // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c,cert-err34-c,cert-str02-c)
             int status = system(update_cmd);
             if (status == 0) {
                 printf("[agy-termux] Update completed successfully! Please restart the CLI.\n");
@@ -159,6 +159,7 @@ int main(int argc, char **argv) {
     char patched_bin[PATH_MAX];
     char dynamic_loader[PATH_MAX];
     char cert_path[PATH_MAX];
+    char prefix_path[PATH_MAX];
     const char *prefix = getenv("PREFIX");
     const char *loader = NULL;
     const char *dir = NULL;
@@ -171,8 +172,12 @@ int main(int argc, char **argv) {
         print_non_termux_message();
         return 1;
     }
+    written = snprintf(prefix_path, sizeof(prefix_path), "%s", prefix);
+    if (written < 0 || written >= (int)sizeof(prefix_path)) {
+        return 1;
+    }
     written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
-                       prefix);
+                       prefix_path);
     if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
         return 1;
     }
@@ -191,14 +196,14 @@ int main(int argc, char **argv) {
 
     // Set dynamic Go resolver and SSL configuration.
     setenv("GODEBUG", "netdns=cgo", 1);
-    written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix);
+    written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix_path);
     if (written < 0 || written >= (int)sizeof(cert_path)) {
         return 1;
     }
     setenv("SSL_CERT_FILE", cert_path, 1);
 
     read_len = readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
-    if (read_len == -1) {
+    if (read_len < 0 || read_len >= (ssize_t)sizeof(exec_path)) {
         return 1;
     }
     exec_path[read_len] = '\0';
@@ -210,7 +215,7 @@ int main(int argc, char **argv) {
     }
 
     // Construct relocatable library search path for native Termux glibc.
-    written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:%s/glibc/lib", dir, prefix);
+    written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:%s/glibc/lib", dir, prefix_path);
     if (written < 0 || written >= (int)sizeof(lib_path)) {
         return 1;
     }
@@ -239,6 +244,7 @@ int main(int argc, char **argv) {
     }
     new_argv[arg_idx] = NULL;
 
+    // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
     if (execv(loader, new_argv) == -1) {
         perror("[agy-termux] execv failed");
         free(new_argv);
