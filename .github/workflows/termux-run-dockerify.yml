@@ -1,11 +1,9 @@
 name: Termux Run Dockerify
 
 on:
-  workflow_run:
-    workflows:
-      - Pull Request Validation
-    types:
-      - completed
+  push:
+    branches:
+      - wallentx/emulator
   workflow_dispatch:
     inputs:
       termux_channel:
