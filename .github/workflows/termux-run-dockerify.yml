@@ -92,10 +92,12 @@ jobs:
               -p 8000:8000 \
               shmayro/dockerify-android:latest
           else
-            echo "KVM is NOT available. Starting in software emulation mode."
+            echo "KVM is NOT available. Setting up QEMU emulation for amd64 image."
+            sudo apt-get install -y qemu-user-static binfmt-support
             docker run -d \
               --name dockerify-android \
               --privileged \
+              --platform linux/amd64 \
               -p 5555:5555 \
               -p 8000:8000 \
               shmayro/dockerify-android:latest

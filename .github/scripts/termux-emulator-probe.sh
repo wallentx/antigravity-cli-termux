@@ -93,7 +93,11 @@ termux_exec() {
 
   rm -f "$local_script"
 
-  if ! adb shell am start-foreground-service --user 0 -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH "$TERMUX_PREFIX/bin/bash" --esa com.termux.RUN_COMMAND_ARGUMENTS "$remote_script" --es com.termux.RUN_COMMAND_WORKDIR "$TERMUX_HOME" --es com.termux.RUN_COMMAND_RUNNER app-shell >/dev/null; then
+  # Temporarily whitelist Termux to allow background FGS start
+  adb shell cmd deviceidle tempwhitelist -d 30000 com.termux >/dev/null 2>&1 || true
+  
+  # Trigger FGS using run-as to satisfy RUN_COMMAND permission check
+  if ! run_as_termux_shell "/system/bin/am start-foreground-service --user 0 -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH $TERMUX_PREFIX/bin/bash --esa com.termux.RUN_COMMAND_ARGUMENTS $remote_script --es com.termux.RUN_COMMAND_WORKDIR $TERMUX_HOME --es com.termux.RUN_COMMAND_RUNNER app-shell" >/dev/null; then
     return 1
   fi
 
