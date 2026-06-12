@@ -193,8 +193,17 @@ install_termux_packages() {
   # shellcheck disable=SC2016
   termux_exec '
 echo "[termux-probe] Package setup PATH=$PATH"
+echo "[termux-probe] Package setup LD_PRELOAD=${LD_PRELOAD:-}"
+echo "[termux-probe] Package setup termux-exec files:"
+/system/bin/ls -la "$PREFIX/lib"/libtermux-exec* 2>/dev/null || true
 echo "[termux-probe] Package setup dpkg=$PREFIX/bin/dpkg"
 echo "[termux-probe] Package setup pkg=$PREFIX/bin/pkg"
+echo "[termux-probe] Package setup command lookup:"
+command -v id grep realpath pkg dpkg || true
+echo "[termux-probe] Package setup helper smoke:"
+id
+grep --version 2>&1 | head -n 1
+realpath "$PREFIX/bin/id"
 "$PREFIX/bin/dpkg" --print-architecture > "$TMPDIR/dpkg-architecture.txt"
 IFS= read -r dpkg_arch < "$TMPDIR/dpkg-architecture.txt"
 echo "$dpkg_arch"
