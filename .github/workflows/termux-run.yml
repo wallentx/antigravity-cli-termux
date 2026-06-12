@@ -93,14 +93,29 @@ jobs:
         run: |
           ./.github/scripts/download-pr-check-artifact.sh
 
-      - name: Enable KVM
+      - name: Install aarch64 Android SDK
+        env:
+          ANDROID_SDK_AARCH64_URL: https://github.com/HomuHomu833/android-sdk-custom/releases/download/36.0.0/android-sdk-aarch64-linux-musl.tar.xz
         run: |
           set -eu
 
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          sdk_root="$RUNNER_TEMP/android-sdk-aarch64"
+          sdk_archive="$RUNNER_TEMP/android-sdk-aarch64-linux-musl.tar.xz"
+          rm -rf "$sdk_root"
+          mkdir -p "$sdk_root"
+          curl --fail --location --retry 3 --retry-delay 5 "$ANDROID_SDK_AARCH64_URL" --output "$sdk_archive"
+          xz -T0 -d -c "$sdk_archive" | tar --no-same-owner -C "$sdk_root" -x -f - --strip-components=1
+
+          {
+            printf 'ANDROID_HOME=%s\n' "$sdk_root"
+            printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root"
+          } >> "$GITHUB_ENV"
+          {
+            printf '%s/platform-tools\n' "$sdk_root"
+            printf '%s/emulator\n' "$sdk_root"
+            printf '%s/cmdline-tools/latest/bin\n' "$sdk_root"
+            printf '%s/tools/bin\n' "$sdk_root"
+          } >> "$GITHUB_PATH"
 
       - name: Inspect native arm Android tooling
         run: |
@@ -110,12 +125,22 @@ jobs:
           echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
           echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          command -v adb || true
           command -v emulator || true
           command -v sdkmanager || true
           command -v avdmanager || true
           if [ -n "${ANDROID_HOME:-}" ]; then
-            find "$ANDROID_HOME" -maxdepth 3 \( -name emulator -o -name sdkmanager -o -name avdmanager \) -print || true
+            find "$ANDROID_HOME" -maxdepth 3 \( -name adb -o -name emulator -o -name sdkmanager -o -name avdmanager \) -print || true
           fi
+
+      - name: Enable KVM
+        run: |
+          set -eu
+
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Restore AVD snapshot cache
         id: restore-avd-cache
