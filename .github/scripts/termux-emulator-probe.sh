@@ -268,7 +268,18 @@ realpath "$PREFIX/bin/id"
 "$PREFIX/bin/dpkg" --print-architecture > "$TMPDIR/dpkg-architecture.txt"
 IFS= read -r dpkg_arch < "$TMPDIR/dpkg-architecture.txt"
 echo "$dpkg_arch"
-test "$dpkg_arch" = "aarch64"
+case "$dpkg_arch" in
+  aarch64)
+    glibc_loader="$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+    ;;
+  x86_64)
+    glibc_loader="$PREFIX/glibc/lib/ld-linux-x86-64.so.2"
+    ;;
+  *)
+    echo "[termux-probe] Unsupported Termux dpkg architecture: $dpkg_arch" >&2
+    exit 1
+    ;;
+esac
 echo "[termux-probe] Updating Termux package metadata"
 TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" update -y
 echo "[termux-probe] Installing ca-certificates and glibc-repo"
@@ -277,7 +288,7 @@ echo "[termux-probe] Updating Termux glibc package metadata"
 TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" update -y
 echo "[termux-probe] Installing glibc-runner"
 TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" install -y glibc-runner
-test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+test -e "$glibc_loader"
 '
   record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
 }
