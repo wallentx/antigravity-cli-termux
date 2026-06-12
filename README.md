@@ -45,7 +45,7 @@ To circumvent this, a relocatable C bootstrapper (`bin/agy`) is compiled:
 When running inside a non-native Termux environment (e.g., a guest PRoot environment on Android), memory allocation limits can trigger immediate TCMalloc crashes due to the 39-bit VA kernel boundaries.
 To resolve this, a runtime **Memory Interposer** architecture is implemented:
 * **Embedded Interposer**: A dynamic shared library (`libmmap_va39_fix.so`) intercepts `mmap` calls at runtime and redirects memory allocation requests above the 39-bit limit to safe address ranges.
-* **Just-in-Time Unpacking**: To keep the standalone release footprint restricted strictly to the `bin/` directory, the interposer library is embedded as a raw byte array directly inside the `bin/agy` executable. At runtime, the bootstrapper automatically extracts the `.so` to a writable temp directory (`$TMPDIR` -> `/tmp`) and preloads it on the fly.
+* **Just-in-Time Unpacking**: To keep the standalone release footprint restricted strictly to the `bin/` directory, the interposer library is embedded as a raw byte array directly inside the `bin/agy` executable. At runtime, the bootstrapper automatically extracts the `.so` to the writable temp directory named by `$TMPDIR` and preloads it on the fly.
 * *For more details, see the technical reference at [docs/PROOT_DISTRO_COMPAT.md](docs/PROOT_DISTRO_COMPAT.md).*
 
 #### 4. In-Place Self-Updating

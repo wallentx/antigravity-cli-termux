@@ -126,10 +126,10 @@ void check_and_perform_update(const char *dir) {
 const char *unpack_mmap_fixer(void) {
     static char unpacked_path[PATH_MAX];
 
-    // Resolve temp directory priority: $TMPDIR -> /tmp
     const char *tmp = getenv("TMPDIR");
     if (!tmp || tmp[0] == '\0') {
-        tmp = "/tmp";
+        errno = ENOENT;
+        return NULL;
     }
 
     int written = snprintf(unpacked_path, sizeof(unpacked_path), "%s/libmmap_va39_fix.so", tmp);
@@ -214,8 +214,8 @@ int main(int argc, char **argv) {
         fixer_path = unpack_mmap_fixer();
         if (!fixer_path) {
             (void)fprintf(stderr,
-                          "[ERR] Failed to extract PRoot compatibility layer. Please check /tmp "
-                          "permissions.\n");
+                          "[ERR] Failed to extract PRoot compatibility layer. Please set TMPDIR "
+                          "to a writable Termux temp directory.\n");
             return 1;
         }
     }

@@ -26,5 +26,5 @@ To keep the release archive restricted strictly to the `bin/` directory, the int
 ### 3. Just-In-Time Extraction & Preloading (`lib/agy_helper.c`)
 At runtime, the bootstrapper `bin/agy` executes the following sequence:
 1. **Environment Detection**: Detects if execution is running natively inside Termux or within a guest PRoot/Chroot distribution.
-2. **Dynamic Unpacking**: If running in a guest PRoot/Chroot distribution, the bootstrapper extracts the embedded `.so` bytes from memory to a writable temporary directory (prioritizing `$TMPDIR` before falling back to `/tmp`). Writing is skipped if the file already exists with matching size.
+2. **Dynamic Unpacking**: If running in a guest PRoot/Chroot distribution, the bootstrapper extracts the embedded `.so` bytes from memory to the writable temporary directory named by `$TMPDIR`. Writing is skipped if the file already exists with matching size.
 3. **Preload Injection**: Appends the extracted `.so` path to the glibc loader `--preload` argument and configures relocatable library search paths (e.g., dynamically adding `/lib` and `/usr/lib`) before executing `execv`.

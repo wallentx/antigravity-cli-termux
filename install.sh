@@ -30,13 +30,13 @@ fi
 if [[ "$ENV_TYPE" == "termux" ]]; then
   TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
   INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
-  TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
-  EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
+  TMPDIR="${TMPDIR:-${TERMUX_PREFIX}/tmp}"
 else
+  : "${TMPDIR:?TMPDIR must be set to a writable Termux temp directory}"
   INSTALL_BIN_DIR="$HOME/.local/bin"
-  TMP="${TMPDIR:-/tmp}/antigravity-termux-standalone.tar.gz"
-  EXTRACT_DIR="${TMPDIR:-/tmp}/.agy-extract"
 fi
+TMP="${TMPDIR}/antigravity-termux-standalone.tar.gz"
+EXTRACT_DIR="${TMPDIR}/.agy-extract"
 INSTALL_SUCCESS=0
 
 # Ensure base directories exist for fresh setups

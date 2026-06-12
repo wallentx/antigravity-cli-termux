@@ -37,11 +37,11 @@ if ! selected="$(
       | $release.assets[]
       | . as $asset
       | (
-          if ($asset.name | test("apt-android-7.*github-debug_" + $install_abi + "\\.apk$")) then 0
+          if ($asset.name | test("android-7.*github-debug_" + $install_abi + "\\.apk$")) then 0
           elif ($asset.name | test("\\+github-debug_" + $install_abi + "\\.apk$")) then 1
           elif (
             ($asset.name | test("github-debug_" + $install_abi + "\\.apk$")) and
-            (($asset.name | test("apt-android-5")) | not)
+            (($asset.name | test("android-5")) | not)
           ) then 2
           else null
           end
