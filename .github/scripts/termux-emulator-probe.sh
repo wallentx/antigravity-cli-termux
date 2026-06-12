@@ -124,7 +124,7 @@ termux_exec() {
 
 enable_termux_run_command_service() {
   log "Enabling Termux RUN_COMMAND service for probe execution."
-  run_as_termux_shell "/system/bin/mkdir -p files/home/.termux && echo allow-external-apps = true > files/home/.termux/termux.properties"
+  run_as_termux_shell "/system/bin/mkdir -p $TERMUX_HOME/.termux && echo allow-external-apps = true > $TERMUX_HOME/.termux/termux.properties"
   adb shell am force-stop com.termux
 }
 
@@ -136,7 +136,7 @@ dump_termux_state() {
   adb shell dumpsys package com.termux 2>/dev/null \
     | grep -E 'versionName|versionCode|primaryCpuAbi|secondaryCpuAbi|dataDir' \
     | sed 's/^/[termux-probe] package: /' || true
-  run_as_termux_shell 'pwd; id; ls -la files files/usr files/usr/bin 2>&1' \
+  run_as_termux_shell '/system/bin/id' \
     | sed 's/^/[termux-probe] run-as: /' || true
 }
 
@@ -256,7 +256,7 @@ wait_for_termux_bootstrap() {
 
   log "Waiting for Termux bootstrap: $bootstrap_attempts attempts, ${bootstrap_interval_seconds}s interval"
   for ((attempt = 1; attempt <= bootstrap_attempts; attempt++)); do
-    if run_as_termux_shell 'test -x files/usr/bin/bash' >/dev/null 2>&1; then
+    if run_as_termux_shell "test -x $TERMUX_PREFIX/bin/bash" >/dev/null 2>&1; then
       log "Termux bootstrap completed after attempt $attempt."
       return 0
     fi
@@ -351,8 +351,8 @@ log "Collecting Termux runtime details."
 termux_arch=$(termux_exec '/system/bin/uname -m' | tr -d '\r')
 # shellcheck disable=SC2016
 termux_dpkg_arch=$(termux_exec '"$PREFIX/bin/dpkg" --print-architecture 2>/dev/null || true' | tr -d '\r')
-termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 && echo present || echo missing' | tr -d '\r')
-termux_x86_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-x86-64.so.2 && echo present || echo missing' | tr -d '\r')
+termux_loader_state=$(termux_exec "test -e \"\$PREFIX/glibc/lib/ld-linux-aarch64.so.1\" && echo present || echo missing" | tr -d '\r')
+termux_x86_loader_state=$(termux_exec "test -e \"\$PREFIX/glibc/lib/ld-linux-x86-64.so.2\" && echo present || echo missing" | tr -d '\r')
 
 record TERMUX_UNAME_M "$termux_arch"
 record TERMUX_DPKG_ARCH "$termux_dpkg_arch"
