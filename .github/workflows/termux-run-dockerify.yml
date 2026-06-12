@@ -9,7 +9,6 @@ on:
   push:
     branches:
       - dev
-      - main
   workflow_dispatch:
     inputs:
       termux_channel:
