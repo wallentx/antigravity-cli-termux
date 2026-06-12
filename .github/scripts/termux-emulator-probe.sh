@@ -128,6 +128,36 @@ enable_termux_run_command_service() {
   adb shell am force-stop com.termux
 }
 
+wait_for_termux_runtime() {
+  log "Checking Termux runtime paths."
+  # shellcheck disable=SC2016
+  termux_exec '
+test -d "$HOME"
+test -x "$PREFIX/bin/bash"
+test -x "$PREFIX/bin/pkg"
+test -x "$PREFIX/bin/dpkg"
+'
+  record TERMUX_RUNTIME_READY true
+}
+
+configure_termux_repositories() {
+  log "Configuring Termux package repositories."
+  # shellcheck disable=SC2016
+  termux_exec '
+/system/bin/mkdir -p "$PREFIX/etc/apt" "$PREFIX/etc/apt/sources.list.d" "$PREFIX/etc/termux"
+{
+  printf "%s\n" "# This file is sourced by pkg"
+  printf "%s\n" "# Termux origin repository"
+  printf "%s\n" "WEIGHT=1"
+  printf "%s\n" "MAIN=\"https://packages.termux.dev/apt/termux-main\""
+  printf "%s\n" "ROOT=\"https://packages.termux.dev/apt/termux-root\""
+  printf "%s\n" "X11=\"https://packages.termux.dev/apt/termux-x11\""
+} > "$PREFIX/etc/termux/chosen_mirrors"
+printf "%s\n" "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+'
+  record TERMUX_REPOSITORIES_CONFIGURED true
+}
+
 dump_termux_state() {
   local label=$1
 
@@ -152,13 +182,13 @@ IFS= read -r dpkg_arch < "$TMPDIR/dpkg-architecture.txt"
 echo "$dpkg_arch"
 test "$dpkg_arch" = "aarch64"
 echo "[termux-probe] Updating Termux package metadata"
-"$PREFIX/bin/pkg" update -y
+TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" update -y
 echo "[termux-probe] Installing ca-certificates and glibc-repo"
-"$PREFIX/bin/pkg" install -y ca-certificates glibc-repo
+TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" install -y ca-certificates glibc-repo
 echo "[termux-probe] Updating Termux glibc package metadata"
-"$PREFIX/bin/pkg" update -y
+TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" update -y
 echo "[termux-probe] Installing glibc-runner"
-"$PREFIX/bin/pkg" install -y glibc-runner
+TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" install -y glibc-runner
 test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 '
   record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
@@ -321,6 +351,8 @@ fi
 
 enable_termux_run_command_service
 
+wait_for_termux_runtime
+
 log "Validating Termux command environment."
 termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
 termux_exec_id=$(termux_exec '/system/bin/id' | tr -d '\r')
@@ -335,6 +367,10 @@ record TERMUX_EXEC_ID "$termux_exec_id"
 record TERMUX_EXEC_PATH "$termux_exec_path"
 record TERMUX_EXEC_LD_LIBRARY_PATH "$termux_exec_ld_library_path"
 record TERMUX_PKG_PATH "$termux_pkg_path"
+
+if [[ "${TERMUX_RESTORE_SNAPSHOT:-false}" != "true" ]]; then
+  configure_termux_repositories
+fi
 
 if [[ "${TERMUX_EXTRA_COMMANDS_AT_START:-false}" == "true" ]]; then
   run_extra_termux_commands start
