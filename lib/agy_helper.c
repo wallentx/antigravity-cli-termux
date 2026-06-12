@@ -91,7 +91,7 @@ void check_and_perform_update(const char *dir) {
             char update_cmd[2048];
             written = snprintf(
                 update_cmd, sizeof(update_cmd),
-                "tmp=$(mktemp -d \"${TMPDIR:-.}/agy-update.XXXXXX\") && "
+                "tmp=$(mktemp -d \"${TMPDIR:-%s/../tmp}/agy-update.XXXXXX\") && "
                 "trap 'rm -rf \"$tmp\"' EXIT && "
                 "curl -fsSL -o \"$tmp/antigravity-termux-standalone.tar.gz\" "
                 "\"https://github.com/wallentx/antigravity-cli-termux/releases/download/%s/"
@@ -100,7 +100,7 @@ void check_and_perform_update(const char *dir) {
                 "agy agy.va39 && "
                 "install -m 0755 \"$tmp/agy\" \"%s/agy\" && "
                 "install -m 0755 \"$tmp/agy.va39\" \"%s/agy.va39\"",
-                latest_tag, dir, dir);
+                dir, latest_tag, dir, dir);
             if (written < 0 || written >= (int)sizeof(update_cmd)) {
                 printf("[agy-termux] Error: Could not construct update command.\n");
                 return;
@@ -125,14 +125,20 @@ void check_and_perform_update(const char *dir) {
 static int is_native_termux(void) {
     const char *termux_version = getenv("TERMUX_VERSION");
     const char *prefix = getenv("PREFIX");
+    char bin_path[PATH_MAX];
+    int written = 0;
 
     if (termux_version == NULL || termux_version[0] == '\0') {
         return 0;
     }
-    if (prefix == NULL || strcmp(prefix, "/data/data/com.termux/files/usr") != 0) {
+    if (prefix == NULL || prefix[0] == '\0') {
         return 0;
     }
-    if (access("/data/data/com.termux/files/usr/bin", F_OK) != 0) {
+    written = snprintf(bin_path, sizeof(bin_path), "%s/bin", prefix);
+    if (written < 0 || written >= (int)sizeof(bin_path)) {
+        return 0;
+    }
+    if (access(bin_path, F_OK) != 0) {
         return 0;
     }
 
@@ -140,19 +146,21 @@ static int is_native_termux(void) {
 }
 
 static void print_non_termux_message(void) {
-    (void)fprintf(stderr,
-                  "[agy-termux] This standalone port is only for native Termux.\n"
-                  "[agy-termux] PRoot environments can use Google's official "
-                  "Antigravity CLI binary directly.\n"
-                  "[agy-termux] Install it with:\n"
-                  "  curl -fsSL https://antigravity.google/cli/install.sh | bash\n");
+    (void)fprintf(stderr, "[agy-termux] This standalone port is only for native Termux.\n"
+                          "[agy-termux] PRoot environments can use Google's official "
+                          "Antigravity CLI binary directly.\n"
+                          "[agy-termux] Install it with:\n"
+                          "  curl -fsSL https://antigravity.google/cli/install.sh | bash\n");
 }
 
 int main(int argc, char **argv) {
     char exec_path[PATH_MAX];
     char lib_path[PATH_MAX * 3];
     char patched_bin[PATH_MAX];
-    const char *loader = "/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1";
+    char dynamic_loader[PATH_MAX];
+    char cert_path[PATH_MAX];
+    const char *prefix = getenv("PREFIX");
+    const char *loader = NULL;
     const char *dir = NULL;
     char **new_argv = NULL;
     int arg_idx = 0;
@@ -163,9 +171,17 @@ int main(int argc, char **argv) {
         print_non_termux_message();
         return 1;
     }
+    written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
+                       prefix);
+    if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
+        return 1;
+    }
+    loader = dynamic_loader;
+
     if (access(loader, F_OK) != 0) {
         (void)fprintf(stderr, "[agy-termux] Missing Termux glibc loader: %s\n", loader);
-        (void)fprintf(stderr, "[agy-termux] Install it with: pkg install glibc-repo glibc\n");
+        (void)fprintf(stderr,
+                      "[agy-termux] You may need to install the glibc-repo and glibc packages.\n");
         return 1;
     }
 
@@ -175,7 +191,11 @@ int main(int argc, char **argv) {
 
     // Set dynamic Go resolver and SSL configuration.
     setenv("GODEBUG", "netdns=cgo", 1);
-    setenv("SSL_CERT_FILE", "/data/data/com.termux/files/usr/etc/tls/cert.pem", 1);
+    written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix);
+    if (written < 0 || written >= (int)sizeof(cert_path)) {
+        return 1;
+    }
+    setenv("SSL_CERT_FILE", cert_path, 1);
 
     read_len = readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
     if (read_len == -1) {
@@ -190,8 +210,7 @@ int main(int argc, char **argv) {
     }
 
     // Construct relocatable library search path for native Termux glibc.
-    written =
-        snprintf(lib_path, sizeof(lib_path), "%s/../lib:/data/data/com.termux/files/usr/glibc/lib", dir);
+    written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:%s/glibc/lib", dir, prefix);
     if (written < 0 || written >= (int)sizeof(lib_path)) {
         return 1;
     }
@@ -203,7 +222,7 @@ int main(int argc, char **argv) {
     }
 
     // loader + "--library-path" + lib_path + patched_bin + user args + NULL
-    int new_argc = argc + 5;
+    int new_argc = argc + 4;
     new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
     if (!new_argv) {
         return 1;

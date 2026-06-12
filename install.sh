@@ -6,7 +6,7 @@ REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
-if [[ -z "${TERMUX_VERSION:-}" || "${PREFIX:-}" != "/data/data/com.termux/files/usr" ]]; then
+if [[ -z "${TERMUX_VERSION:-}" || -z "${PREFIX:-}" ]]; then
   cat >&2 <<'EOF'
 [ERR] This installer is only for native Termux.
 

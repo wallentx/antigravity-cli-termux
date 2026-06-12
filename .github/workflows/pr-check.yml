@@ -24,22 +24,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bootstrap Transient Headers for Linters
-        run: |
-          gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
-          python3 -c '
-          import pathlib
-          so_data = pathlib.Path("lib/libmmap_va39_fix.so").read_bytes()
-          hex_bytes = ", ".join(f"0x{b:02x}" for b in so_data)
-          pathlib.Path("lib/mmap_va39_fix_bytes.h").write_text(
-              "// clang-format off\n"
-              "#include <stddef.h>\n"
-              f"static const unsigned char mmap_va39_fix_so[] = {{ {hex_bytes} }};\n"
-              f"static const size_t mmap_va39_fix_so_len = {len(so_data)};\n"
-              "// clang-format on\n"
-          )
-          '
-
       - name: Run clang-format and clang-tidy
         id: cpp_linter
         uses: cpp-linter/cpp-linter-action@v2
@@ -73,22 +57,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bootstrap Transient Headers for Linters
-        run: |
-          gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
-          python3 -c '
-          import pathlib
-          so_data = pathlib.Path("lib/libmmap_va39_fix.so").read_bytes()
-          hex_bytes = ", ".join(f"0x{b:02x}" for b in so_data)
-          pathlib.Path("lib/mmap_va39_fix_bytes.h").write_text(
-              "// clang-format off\n"
-              "#include <stddef.h>\n"
-              f"static const unsigned char mmap_va39_fix_so[] = {{ {hex_bytes} }};\n"
-              f"static const size_t mmap_va39_fix_so_len = {len(so_data)};\n"
-              "// clang-format on\n"
-          )
-          '
-
       - name: 🧰 Actions Toolbox
         uses: wallentx/gh-actions/composite/actions-toolbox@main
         env:
@@ -116,22 +84,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Bootstrap Transient Headers for Linters
-        run: |
-          gcc -O2 -fPIC -shared -o lib/libmmap_va39_fix.so lib/mmap_va39_fix.c -ldl
-          python3 -c '
-          import pathlib
-          so_data = pathlib.Path("lib/libmmap_va39_fix.so").read_bytes()
-          hex_bytes = ", ".join(f"0x{b:02x}" for b in so_data)
-          pathlib.Path("lib/mmap_va39_fix_bytes.h").write_text(
-              "// clang-format off\n"
-              "#include <stddef.h>\n"
-              f"static const unsigned char mmap_va39_fix_so[] = {{ {hex_bytes} }};\n"
-              f"static const size_t mmap_va39_fix_so_len = {len(so_data)};\n"
-              "// clang-format on\n"
-          )
-          '
 
       - name: Strict C Compiler Diagnostic Check
         run: |
