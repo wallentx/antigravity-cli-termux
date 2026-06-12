@@ -106,6 +106,11 @@ jobs:
           mkdir -p "$sdk_root"
           curl --fail --location --retry 3 --retry-delay 5 "$ANDROID_SDK_AARCH64_URL" --output "$sdk_archive"
           xz -T0 -d -c "$sdk_archive" | tar --no-same-owner -C "$sdk_root" -x -f - --strip-components=1
+          if [ -d "$sdk_root/cmdline-tools" ] && [ ! -d "$sdk_root/cmdline-tools/latest" ]; then
+            mkdir -p "$sdk_root/cmdline-tools/latest"
+            find "$sdk_root/cmdline-tools" -mindepth 1 -maxdepth 1 ! -name latest \
+              -exec mv {} "$sdk_root/cmdline-tools/latest/" \;
+          fi
 
           {
             printf 'ANDROID_HOME=%s\n' "$sdk_root"
