@@ -62,7 +62,6 @@ termux_exec() {
     printf 'set +e\n'
     printf '(\n'
     printf 'set -Eeuo pipefail\n'
-    printf "unset LD_PRELOAD LD_LIBRARY_PATH\n"
     printf 'export HOME=%q\n' "$TERMUX_HOME"
     printf 'export PREFIX=%q\n' "$TERMUX_PREFIX"
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
@@ -71,6 +70,14 @@ termux_exec() {
     printf 'export SHELL=%q\n' "$TERMUX_PREFIX/bin/bash"
     printf 'export LANG=%q\n' 'C.UTF-8'
     printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
+    # shellcheck disable=SC2016
+    printf 'if [ -f "$PREFIX/lib/libtermux-exec-ld-preload.so" ]; then\n'
+    # shellcheck disable=SC2016
+    printf '  export LD_PRELOAD="$PREFIX/lib/libtermux-exec-ld-preload.so"\n'
+    printf 'else\n'
+    printf '  unset LD_PRELOAD\n'
+    printf 'fi\n'
+    printf 'unset LD_LIBRARY_PATH\n'
     printf "cd \"\$HOME\"\n"
     printf '%s\n' "$command_line"
     printf ') > %q 2> %q\n' "$remote_stdout" "$remote_stderr"

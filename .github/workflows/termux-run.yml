@@ -128,15 +128,16 @@ jobs:
           if [[ "$SAVE_SNAPSHOT" != "true" ]]; then
             emulator_options+=("-no-snapshot-save")
           fi
+          if [[ "$RESTORE_SNAPSHOT" == "true" ]]; then
+            emulator_options+=("-no-snapshot-update-time")
+          fi
           emulator_options+=(
             "-no-window"
-            "-gpu" "swiftshader_indirect"
-            "-noaudio"
+            "-accel" "on"
+            "-gpu" "software"
+            "-no-audio"
             "-no-boot-anim"
-            "-camera-back" "none"
-            "-camera-front" "none"
-            "-netfast"
-            "-skip-adb-auth"
+            "-no-metrics"
           )
 
           printf 'options=%s\n' "${emulator_options[*]}" >> "$GITHUB_OUTPUT"

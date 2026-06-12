@@ -111,20 +111,54 @@ jobs:
           set -euo pipefail
 
           serial=localhost:5555
+          check_dockerify_container() {
+            local running status
+
+            if ! docker container inspect dockerify-android >/dev/null 2>&1; then
+              echo "dockerify-android container is not present." >&2
+              docker ps -a --filter name=dockerify-android >&2 || true
+              return 1
+            fi
+
+            running="$(docker inspect -f '{{.State.Running}}' dockerify-android 2>/dev/null || echo false)"
+            status="$(docker inspect -f '{{.State.Status}} (exit={{.State.ExitCode}})' dockerify-android 2>/dev/null || true)"
+            if [ "$running" != "true" ]; then
+              echo "dockerify-android container is not running: ${status:-unknown}" >&2
+              docker logs --tail 200 dockerify-android >&2 || true
+              return 1
+            fi
+
+            if docker logs --tail 200 dockerify-android 2>&1 | grep -Eq 'entered FATAL state|Unknown AVD name|ANDROID_AVD_HOME is defined but there is no file android\.ini'; then
+              echo "Dockerify Android emulator failed before ADB became usable." >&2
+              docker logs --tail 200 dockerify-android >&2 || true
+              return 1
+            fi
+
+            return 0
+          }
 
           echo "Waiting for ADB TCP endpoint..."
+          port_reachable=false
           for _ in {1..180}; do
+            check_dockerify_container
             if bash -c "echo > /dev/tcp/127.0.0.1/5555" 2>/dev/null; then
               echo "ADB port is reachable."
+              port_reachable=true
               break
             fi
             sleep 2
           done
+          if [ "$port_reachable" != "true" ]; then
+            echo "ADB TCP endpoint never became reachable." >&2
+            docker logs --tail 200 dockerify-android >&2 || true
+            exit 1
+          fi
 
           echo "Connecting to emulator via ADB..."
           connected=false
           for _ in {1..180}; do
-            output="$(adb connect "$serial" 2>&1 || true)"
+            check_dockerify_container
+            output="$(timeout 10s adb connect "$serial" 2>&1 || true)"
             echo "$output"
             if echo "$output" | grep -Eq "connected to|already connected to"; then
               connected=true
@@ -141,8 +175,8 @@ jobs:
           echo "Waiting for device transport..."
           online=false
           for _ in {1..180}; do
-            adb -s "$serial" wait-for-device >/dev/null 2>&1 || true
-            status="$(adb -s "$serial" get-state 2>/dev/null | tr -d '\r' || true)"
+            check_dockerify_container
+            status="$(timeout 10s adb -s "$serial" get-state 2>/dev/null | tr -d '\r' || true)"
             echo "Current ADB state: ${status:-<empty>}"
             if [ "$status" = "device" ]; then
               online=true
@@ -159,8 +193,9 @@ jobs:
           echo "Waiting for Android boot completion..."
           booted=false
           for _ in {1..240}; do
-            boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-            dev_bootcomplete="$(adb -s "$serial" shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r' || true)"
+            check_dockerify_container
+            boot_completed="$(timeout 10s adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+            dev_bootcomplete="$(timeout 10s adb -s "$serial" shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r' || true)"
             echo "sys.boot_completed=${boot_completed:-<empty>} dev.bootcomplete=${dev_bootcomplete:-<empty>}"
             if [ "$boot_completed" = "1" ] || [ "$dev_bootcomplete" = "1" ]; then
               booted=true
