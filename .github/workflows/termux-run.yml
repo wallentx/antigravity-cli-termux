@@ -109,7 +109,6 @@ jobs:
         with:
           path: |
             ~/.android/avd
-            ~/.android/adb*
           key: ${{ env.TERMUX_AVD_CACHE_KEY }}
           restore-keys: |
             ${{ env.TERMUX_AVD_CACHE_PREFIX }}
@@ -136,10 +135,20 @@ jobs:
             "-no-boot-anim"
             "-camera-back" "none"
             "-camera-front" "none"
+            "-netfast"
+            "-no-accel-check"
+            "-skip-adb-auth"
           )
 
           printf 'options=%s\n' "${emulator_options[*]}" >> "$GITHUB_OUTPUT"
           printf 'Emulator options: %s\n' "${emulator_options[*]}"
+
+      - name: Reset adb state
+        run: |
+          set -eu
+          adb kill-server || true
+          rm -f ~/.android/adb*.json ~/.android/adbkey ~/.android/adbkey.pub || true
+          adb start-server
 
       - name: Probe Termux in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -169,7 +178,6 @@ jobs:
         with:
           path: |
             ~/.android/avd
-            ~/.android/adb*
           key: ${{ env.TERMUX_AVD_CACHE_KEY }}
 
       - name: Upload emulator diagnostics
