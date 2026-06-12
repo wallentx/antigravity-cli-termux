@@ -197,6 +197,10 @@ jobs:
           docker logs dockerify-android > termux-dockerify-container-logs.txt 2>/dev/null || true
           if adb devices | grep -q -E "\bdevice\b"; then
             adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
+            adb shell ps -A > termux-ps.txt 2>/dev/null || true
+            adb shell dumpsys activity > termux-dumpsys-activity.txt 2>/dev/null || true
+            adb shell dumpsys package com.termux > termux-dumpsys-package.txt 2>/dev/null || true
+            adb shell run-as com.termux ls -la /data/data/com.termux/files/home > termux-home-listing.txt 2>/dev/null || true
             for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
               if [ -n "$dir" ]; then
                 base=$(basename "$dir")
@@ -219,6 +223,10 @@ jobs:
           name: termux-dockerify-diagnostics
           path: |
             termux-emulator-logcat.txt
+            termux-ps.txt
+            termux-dumpsys-activity.txt
+            termux-dumpsys-package.txt
+            termux-home-listing.txt
             termux-emulator-probe.env
             termux-releases.json
             termux-stdout-*.txt
