@@ -62,6 +62,7 @@ termux_exec() {
     printf 'set +e\n'
     printf '(\n'
     printf 'set -Eeuo pipefail\n'
+    printf "unset LD_PRELOAD LD_LIBRARY_PATH\n"
     printf 'export HOME=%q\n' "$TERMUX_HOME"
     printf 'export PREFIX=%q\n' "$TERMUX_PREFIX"
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
