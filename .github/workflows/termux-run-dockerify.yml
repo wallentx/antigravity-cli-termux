@@ -86,17 +86,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y adb
           
-          # Check KVM availability
-          ls -la /dev/kvm || true
-          
-          # Start dockerify-android container
-          docker run -d \
-            --name dockerify-android \
-            --privileged \
-            --device /dev/kvm \
-            -p 5555:5555 \
-            -p 8000:8000 \
-            shmayro/dockerify-android:latest
+          # Start dockerify-android container with KVM if available
+          if [ -e /dev/kvm ]; then
+            echo "KVM is available. Starting with hardware acceleration."
+            docker run -d \
+              --name dockerify-android \
+              --privileged \
+              --device /dev/kvm \
+              -p 5555:5555 \
+              -p 8000:8000 \
+              shmayro/dockerify-android:latest
+          else
+            echo "KVM is NOT available. Starting in software emulation mode."
+            docker run -d \
+              --name dockerify-android \
+              --privileged \
+              -p 5555:5555 \
+              -p 8000:8000 \
+              shmayro/dockerify-android:latest
+          fi
 
       - name: Wait for emulator to boot
         run: |
@@ -148,18 +156,22 @@ jobs:
       - name: Capture emulator diagnostic files
         if: always()
         run: |
-          adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
-          for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
-            if [ -n "$dir" ]; then
-              base=$(basename "$dir")
-              echo "=== Captured stdout for $base ===" > "termux-stdout-$base.txt"
-              adb shell run-as com.termux cat "$dir/stdout" >> "termux-stdout-$base.txt" 2>/dev/null || true
-              echo "=== Captured stderr for $base ===" > "termux-stderr-$base.txt"
-              adb shell run-as com.termux cat "$dir/stderr" >> "termux-stderr-$base.txt" 2>/dev/null || true
-              echo "=== Captured status for $base ===" > "termux-status-$base.txt"
-              adb shell run-as com.termux cat "$dir/status" >> "termux-status-$base.txt" 2>/dev/null || true
-            fi
-          done
+          if adb devices | grep -q -E "\bdevice\b"; then
+            adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
+            for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
+              if [ -n "$dir" ]; then
+                base=$(basename "$dir")
+                echo "=== Captured stdout for $base ===" > "termux-stdout-$base.txt"
+                adb shell run-as com.termux cat "$dir/stdout" >> "termux-stdout-$base.txt" 2>/dev/null || true
+                echo "=== Captured stderr for $base ===" > "termux-stderr-$base.txt"
+                adb shell run-as com.termux cat "$dir/stderr" >> "termux-stderr-$base.txt" 2>/dev/null || true
+                echo "=== Captured status for $base ===" > "termux-status-$base.txt"
+                adb shell run-as com.termux cat "$dir/status" >> "termux-status-$base.txt" 2>/dev/null || true
+              fi
+            done
+          else
+            echo "No online adb devices found. Skipping adb diagnostics."
+          fi
 
       - name: Upload emulator diagnostics
         if: always()
