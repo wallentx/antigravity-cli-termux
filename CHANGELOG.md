@@ -1,6 +1,22 @@
 # Antigravity CLI Changelog
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
+## 1.0.7
+
+- Added a configurable timeout for launching MCP servers, allowing users to specify a custom timeout or set it to `-1` to disable the timeout completely.
+- Revamped the artifact viewer gutter numbering and line mapping to accurately align terminal viewport lines with actual 1-based source file line numbers, including support for wrapped lines and collapsed Mermaid diagrams.
+- Fixed a bug where the CLI could get stuck in a pending state (showing a transient spinner) after sending a message due to stale status updates.
+- Fixed a bug where the wrong workspace directory was displayed in the header and `/help` menu when multiple workspaces were active.
+- Fixed a desync bug in the agent state management where stale callbacks from previous runs could be used upon cache hits in new agent state.
+- Fixed Windows-specific sandbox network proxy issues, resolving a hang during connection hijacking and correcting tunnel response protocols.
+- Fixed a bug where the archival status timestamp was not correctly saved when archiving conversations.
+- Fixed a potential stack overflow crash by introducing a non-recursive warning output mechanism for pre-conversation errors.
+- Increased the maximum tool calls limit to 512 for Gemini models, allowing agents to perform significantly more complex, multi-step tasks in a single turn.
+- Added support for installing plugins directly from GitHub subpaths (with branch resolution).
+- Fixed variable resolution in plugins, ensuring gemini cli variables like `${extensionPath}` correctly resolves to the final installation directory.
+- Added native Wayland clipboard support (wl-paste) on Linux, falling back to `xclip` for X11 environments, and prioritized copied files (from file managers) over raw image data.
+- Preserved unknown fields in `settings.json` during read, write, and merge operations, preventing settings from being silently wiped out when switching between different CLI versions or builds.
+- Fixed layout boundary overflow, scrolling visibility, and out-of-bounds scrolling bugs in the artifact detail view when inline comments are present.
 
 ## 1.0.6
 
