@@ -103,8 +103,13 @@ termux_exec() {
       break
     fi
 
-    if ((attempt % 60 == 0)); then
+    if ((attempt % 30 == 0)); then
       log "Waiting for Termux command $command_id to finish: attempt $attempt/600"
+      log "--- stdout tail ---"
+      run_as_termux_shell "/system/bin/tail -n 20 $remote_stdout 2>/dev/null || true" || true
+      log "--- stderr tail ---"
+      run_as_termux_shell "/system/bin/tail -n 20 $remote_stderr 2>/dev/null || true" || true
+      log "-------------------"
     fi
 
     sleep 1

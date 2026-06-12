@@ -172,6 +172,22 @@ jobs:
             ~/.android/avd
           key: ${{ env.TERMUX_AVD_CACHE_KEY }}
 
+      - name: Capture emulator diagnostic files
+        if: always()
+        run: |
+          adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
+          for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
+            if [ -n "$dir" ]; then
+              base=$(basename "$dir")
+              echo "=== Captured stdout for $base ===" > "termux-stdout-$base.txt"
+              adb shell run-as com.termux cat "$dir/stdout" >> "termux-stdout-$base.txt" 2>/dev/null || true
+              echo "=== Captured stderr for $base ===" > "termux-stderr-$base.txt"
+              adb shell run-as com.termux cat "$dir/stderr" >> "termux-stderr-$base.txt" 2>/dev/null || true
+              echo "=== Captured status for $base ===" > "termux-status-$base.txt"
+              adb shell run-as com.termux cat "$dir/status" >> "termux-status-$base.txt" 2>/dev/null || true
+            fi
+          done
+
       - name: Upload emulator diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -181,5 +197,8 @@ jobs:
             termux-emulator-logcat.txt
             termux-emulator-probe.env
             termux-releases.json
+            termux-stdout-*.txt
+            termux-stderr-*.txt
+            termux-status-*.txt
             termux-pr-artifact/antigravity-termux-standalone.tar.gz
           if-no-files-found: ignore
