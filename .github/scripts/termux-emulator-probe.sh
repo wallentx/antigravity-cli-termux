@@ -51,11 +51,6 @@ termux_exec() {
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
     printf 'export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
-    printf 'pkg() (\n'
-    printf '  export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
-    # shellcheck disable=SC2016
-    printf '  source "$PREFIX/bin/pkg" "$@"\n'
-    printf ')\n'
     printf "unset LD_PRELOAD LD_LIBRARY_PATH\n"
     printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
@@ -94,15 +89,19 @@ install_termux_packages() {
 echo "[termux-probe] Package setup PATH=$PATH"
 echo "[termux-probe] Package setup dpkg=$PREFIX/bin/dpkg"
 echo "[termux-probe] Package setup pkg=$PREFIX/bin/pkg"
-type pkg
-"$PREFIX/bin/dpkg" --print-architecture
-test "$("$PREFIX/bin/dpkg" --print-architecture)" = "aarch64"
+echo "[termux-probe] Package setup apt=$PREFIX/bin/apt"
+"$PREFIX/bin/dpkg" --print-architecture > "$TMPDIR/dpkg-architecture.txt"
+IFS= read -r dpkg_arch < "$TMPDIR/dpkg-architecture.txt"
+echo "$dpkg_arch"
+test "$dpkg_arch" = "aarch64"
 echo "[termux-probe] Updating Termux package metadata"
-pkg update -y
+"$PREFIX/bin/apt" update
 echo "[termux-probe] Installing ca-certificates and glibc-repo"
-pkg install ca-certificates glibc-repo -y
+"$PREFIX/bin/apt" install -y ca-certificates glibc-repo
+echo "[termux-probe] Updating Termux glibc package metadata"
+"$PREFIX/bin/apt" update
 echo "[termux-probe] Installing glibc-runner"
-pkg install glibc-runner -y
+"$PREFIX/bin/apt" install -y glibc-runner
 test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 '
   record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
