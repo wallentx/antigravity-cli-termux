@@ -102,14 +102,31 @@ jobs:
               -p 8000:8000 \
               shmayro/dockerify-android:latest
           fi
+          
+          echo "Giving emulator time to initialize..."
+          sleep 20
 
       - name: Wait for emulator to boot
         run: |
-          echo "Waiting for ADB connection..."
+          set -euo pipefail
+
+          serial=localhost:5555
+
+          echo "Waiting for ADB TCP endpoint..."
+          for _ in {1..180}; do
+            if bash -c "echo > /dev/tcp/127.0.0.1/5555" 2>/dev/null; then
+              echo "ADB port is reachable."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "Connecting to emulator via ADB..."
           connected=false
-          for _ in {1..90}; do
-            if adb connect localhost:5555 | grep -q "connected"; then
-              echo "Connected to emulator via ADB!"
+          for _ in {1..180}; do
+            output="$(adb connect "$serial" 2>&1 || true)"
+            echo "$output"
+            if echo "$output" | grep -Eq "connected to|already connected to"; then
               connected=true
               break
             fi
@@ -117,15 +134,17 @@ jobs:
           done
           if [ "$connected" != "true" ]; then
             echo "Failed to connect to ADB daemon." >&2
+            adb devices -l || true
             exit 1
           fi
-          
-          echo "Waiting for device to be online..."
+
+          echo "Waiting for device transport..."
           online=false
-          for _ in {1..300}; do
-            status=$(adb get-state 2>/dev/null || true)
+          for _ in {1..180}; do
+            adb -s "$serial" wait-for-device >/dev/null 2>&1 || true
+            status="$(adb -s "$serial" get-state 2>/dev/null | tr -d '\r' || true)"
+            echo "Current ADB state: ${status:-<empty>}"
             if [ "$status" = "device" ]; then
-              echo "Device is online!"
               online=true
               break
             fi
@@ -133,15 +152,17 @@ jobs:
           done
           if [ "$online" != "true" ]; then
             echo "Device never came online." >&2
+            adb devices -l || true
             exit 1
           fi
-          
-          echo "Waiting for system boot completion..."
+
+          echo "Waiting for Android boot completion..."
           booted=false
-          for _ in {1..150}; do
-            boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
-            if [ "$boot_completed" = "1" ]; then
-              echo "System booted successfully!"
+          for _ in {1..240}; do
+            boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+            dev_bootcomplete="$(adb -s "$serial" shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r' || true)"
+            echo "sys.boot_completed=${boot_completed:-<empty>} dev.bootcomplete=${dev_bootcomplete:-<empty>}"
+            if [ "$boot_completed" = "1" ] || [ "$dev_bootcomplete" = "1" ]; then
               booted=true
               break
             fi
@@ -149,10 +170,10 @@ jobs:
           done
           if [ "$booted" != "true" ]; then
             echo "System boot timed out." >&2
+            adb -s "$serial" shell getprop || true
             exit 1
           fi
-          
-          # Show active devices
+
           adb devices -l
 
       - name: Probe Termux in Dockerify Android
