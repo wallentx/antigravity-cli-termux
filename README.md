@@ -22,7 +22,7 @@ Every 6 hours, a GitHub Actions workflow performs the following engineering pipe
 graph TD
     A[Upstream Release Detected] --> B[Download Linux arm64 Binary]
     B --> C[Apply VA39 Memory Alignment Patches]
-    C --> D[Cross-Compile Native C Bootstrapper with Embedded Interposer]
+    C --> D[Cross-Compile Native Termux Bootstrapper]
     D --> E[Package Relocatable Standalone Tarball]
     E --> F[Cryptographically Sign Build via Sigstore OIDC]
 ```
@@ -36,17 +36,21 @@ A dedicated Python patching process is executed during the build to:
 
 #### 2. Relocatable C Bootstrapper
 Standard Termux runs under the Android Bionic libc environment, injecting specific preloads (`LD_PRELOAD=/data/.../libtermux-exec.so`) to intercept calls. However, because the patched binary is built under glibc, loading it directly causes immediate crashes (`invalid ELF header`) when the glibc dynamic linker processes Bionic preloads.
-To circumvent this, a relocatable C bootstrapper (`bin/agy`) is compiled:
+To circumvent this, a relocatable C bootstrapper (`agy`) is compiled:
 * **Dynamic Resolution**: Resolves its own folder at runtime using `/proc/self/exe` via `readlink`, enabling the package to be extracted and executed in *any* directory without wrapper scripts.
 * **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
 * **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
 
-#### 3. PRoot Distro Compatibility (Dynamic Interposer)
-When running inside a non-native Termux environment (e.g., a guest PRoot environment on Android), memory allocation limits can trigger immediate TCMalloc crashes due to the 39-bit VA kernel boundaries.
-To resolve this, a runtime **Memory Interposer** architecture is implemented:
-* **Embedded Interposer**: A dynamic shared library (`libmmap_va39_fix.so`) intercepts `mmap` calls at runtime and redirects memory allocation requests above the 39-bit limit to safe address ranges.
-* **Just-in-Time Unpacking**: To keep the standalone release footprint restricted strictly to the `bin/` directory, the interposer library is embedded as a raw byte array directly inside the `bin/agy` executable. At runtime, the bootstrapper automatically extracts the `.so` to the writable temp directory named by `$TMPDIR` and preloads it on the fly.
-* *For more details, see the technical reference at [docs/PROOT_DISTRO_COMPAT.md](docs/PROOT_DISTRO_COMPAT.md).*
+#### 3. Native Termux Only
+This standalone port is intentionally scoped to native Termux on Android. PRoot
+environments can run Google's official Antigravity CLI binary
+directly, so this project no longer ships a PRoot compatibility layer.
+
+If you are inside PRoot, use the official installer instead:
+
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+```
 
 #### 4. In-Place Self-Updating
 The C bootstrapper intercepts the `update` subcommand and queries this fork's GitHub Releases API, providing a seamless in-place update mechanism that updates both the patched engine and itself without needing complex wrappers or manually executing curl commands.

@@ -6,37 +6,25 @@ REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
-tp=$(awk '/^TracerPid:/ {print $2}' /proc/self/status 2>/dev/null || echo 0)
-tn=""
-if [[ "$tp" -gt 0 ]]; then
-  tn=$(awk '/^Name:/ {print $2}' "/proc/$tp/status" 2>/dev/null || cat "/proc/$tp/comm" 2>/dev/null || true)
-fi
+if [[ -z "${TERMUX_VERSION:-}" || -z "${PREFIX:-}" ]]; then
+  cat >&2 <<'EOF'
+[ERR] This installer is only for native Termux.
 
-ENV_TYPE="unknown"
-case "$tn" in
-  proot|proot-*|proot_*) ENV_TYPE="proot" ;;
-  *)
-    if [[ -n "${TERMUX_VERSION:-}" ]]; then
-      ENV_TYPE="termux"
-    fi
-    ;;
-esac
+PRoot environments can use Google's official Antigravity CLI binary
+directly, so this Termux-specific standalone port does not install there.
+Use the official installer instead:
 
-if [[ "$ENV_TYPE" == "unknown" ]]; then
-  printf "\033[31m[ERR]\033[0m This install script is exclusively designed for native Termux or Termux PRoot distro environments.\n" >&2
+  curl -fsSL https://antigravity.google/cli/install.sh | bash
+
+EOF
   exit 1
 fi
 
-if [[ "$ENV_TYPE" == "termux" ]]; then
-  TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-  INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
-  TMPDIR="${TMPDIR:-${TERMUX_PREFIX}/tmp}"
-else
-  : "${TMPDIR:?TMPDIR must be set to a writable Termux temp directory}"
-  INSTALL_BIN_DIR="$HOME/.local/bin"
-fi
-TMP="${TMPDIR}/antigravity-termux-standalone.tar.gz"
-EXTRACT_DIR="${TMPDIR}/.agy-extract"
+ENV_TYPE="termux"
+TERMUX_PREFIX="$PREFIX"
+INSTALL_BIN_DIR="${TERMUX_PREFIX}/bin"
+TMP="${TERMUX_PREFIX}/tmp/antigravity-termux-standalone.tar.gz"
+EXTRACT_DIR="${TERMUX_PREFIX}/tmp/.agy-extract"
 INSTALL_SUCCESS=0
 
 # Ensure base directories exist for fresh setups
@@ -46,8 +34,6 @@ mkdir -p "$(dirname "$TMP")" 2>/dev/null || true
 cleanup() {
   printf "\033[?25h" # Restore cursor if cancelled
   [[ -n "${TMP_LOGO:-}" && -f "$TMP_LOGO" ]] && rm -f "$TMP_LOGO"
-  [[ -n "${GLIBC_LOG:-}" && -f "$GLIBC_LOG" ]] && rm -f "$GLIBC_LOG"
-  [[ -n "${GLIBC_PCT:-}" && -f "$GLIBC_PCT" ]] && rm -f "$GLIBC_PCT"
   [[ -d "$EXTRACT_DIR" ]] && rm -rf "$EXTRACT_DIR"
   if [[ "${INSTALL_SUCCESS:-0}" -ne 1 ]]; then
     [[ -f "$TMP" ]] && rm -f "$TMP"
@@ -116,33 +102,6 @@ spinner() {
     printf "\r\033[K %b[ERR]%b %s\n" "$RED" "$RESET" "$msg"
   fi
   printf "\033[?25h" # Show cursor
-  return $exit_status
-}
-
-progress_spinner() {
-  local pid=$1
-  local msg=$2
-  local pct_file=$3
-  local spinstr='\|/-'
-  printf "\033[?25l" # Hide cursor
-  while kill -0 "$pid" 2>/dev/null; do
-    local temp=${spinstr#?}
-    local pct="  0"
-    if [[ -f "$pct_file" ]]; then
-      pct=$(tail -n 1 "$pct_file" 2>/dev/null || echo "  0")
-    fi
-    printf "\r\033[K %b[%c]%b [%3s%%] %b%s%b" "$CYAN" "$spinstr" "$RESET" "$pct" "$DIM" "$msg" "$RESET"
-    local spinstr=$temp${spinstr%"$temp"}
-    sleep 0.1
-  done
-  local exit_status=0
-  wait "$pid" || exit_status=$?
-  if [ $exit_status -eq 0 ]; then
-    printf "\r\033[K %b[OK]%b %s\n" "$GREEN" "$RESET" "$msg"
-  else
-    printf "\r\033[K %b[ERR]%b %s\n" "$RED" "$RESET" "$msg"
-  fi
-  printf "\033[?25h" # Restore cursor
   return $exit_status
 }
 
@@ -266,57 +225,18 @@ divider
 [[ "$(uname -m)" == "aarch64" ]] || die "Architecture must be aarch64"
 command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
+command -v install >/dev/null 2>&1 || die "install is required"
 
-check_glibc() {
-  if [[ "$ENV_TYPE" == "termux" ]]; then
-    [[ -d "${TERMUX_PREFIX}/glibc" ]]
-  else
-    ldd --version 2>&1 | grep -qi -E '(glibc|gnu libc)'
-  fi
-}
+GLIBC_LOADER="${TERMUX_PREFIX}/glibc/lib/ld-linux-aarch64.so.1"
+if [[ ! -x "$GLIBC_LOADER" ]]; then
+  die "Missing Termux glibc loader: $GLIBC_LOADER
+You may need to install the glibc-repo and glibc packages, then rerun this installer."
+fi
 
-if ! check_glibc; then
-  if [[ "$ENV_TYPE" == "termux" ]]; then
-    command -v pkg >/dev/null 2>&1 || die "pkg is required to install glibc"
-
-    printf "\n  %b[!]%b The glibc package is required but not installed.\n" "$RED" "$RESET"
-    printf "  Would you like to install it now via pkg? [Y/n]: "
-    read -r -n 1 ans < /dev/tty || ans="n"
-    printf "\n"
-
-    if [[ "$ans" =~ ^[Yy]$ ]] || [[ -z "$ans" ]]; then
-      GLIBC_LOG="${TMP}.glibc.log"
-      GLIBC_PCT="${TMP}.pct"
-      echo "0" > "$GLIBC_PCT"
-      {
-        {
-          pkg install -y glibc-repo -o APT::Status-Fd=1 || true
-          pkg install -y glibc -o APT::Status-Fd=1
-        } 2>&1 | tee -a "$GLIBC_LOG" | awk '
-          /^dlstatus:[0-9]+:([0-9.]+):/ || /^pmstatus:[^:]+:([0-9.]+):/ {
-            split($0, a, ":")
-            pct = int(a[3])
-            if (pct < 0) pct = 0
-            if (pct > 100) pct = 100
-            print pct > "'"${GLIBC_PCT}"'"
-            close("'"${GLIBC_PCT}"'")
-            fflush()
-          }'
-      } &
-      progress_spinner $! "Setting up Termux glibc environment..." "$GLIBC_PCT" || true
-      rm -f "$GLIBC_PCT"
-
-      if ! check_glibc; then
-        [[ -f "$GLIBC_LOG" ]] && tail -n 30 "$GLIBC_LOG" >&2
-        die "Failed to install Termux glibc. Please install manually: pkg update && pkg install -y glibc-repo glibc"
-      fi
-      rm -f "$GLIBC_LOG"
-    else
-      die "glibc is required to proceed. Please install it manually."
-    fi
-  else
-    die "glibc is required but not found. Please install glibc using your distribution's package manager."
-  fi
+CA_BUNDLE="${TERMUX_PREFIX}/etc/tls/cert.pem"
+if [[ ! -s "$CA_BUNDLE" ]]; then
+  die "Missing Termux CA bundle: $CA_BUNDLE
+You may need to install the ca-certificates package, then rerun this installer."
 fi
 
 ok "Environment: ${ENV_TYPE} (aarch64)"
@@ -330,7 +250,7 @@ mkdir -p "$EXTRACT_DIR"
 download_with_progress "$URL" "$TMP" || die
 
 # ── Extraction ────────────────────────────────────────────────────────────────
-tar -xz -C "$EXTRACT_DIR" -f "$TMP" bin/agy bin/agy.va39 >/dev/null 2>&1 &
+tar -xz -C "$EXTRACT_DIR" -f "$TMP" agy agy.va39 >/dev/null 2>&1 &
 spinner $! "Extracting binaries..." || die
 
 AGY_BAK=""
@@ -344,8 +264,8 @@ if [[ -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
   mv -f "$INSTALL_BIN_DIR/agy.va39" "$AGY_VA39_BAK" || die "Failed to back up existing agy.va39 binary from $INSTALL_BIN_DIR"
 fi
 
-install -m 0755 "$EXTRACT_DIR/bin/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to install agy binary to $INSTALL_BIN_DIR"
-install -m 0755 "$EXTRACT_DIR/bin/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to install agy binary to $INSTALL_BIN_DIR"
+install -m 0755 "$EXTRACT_DIR/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
 rm -rf "$EXTRACT_DIR"
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
