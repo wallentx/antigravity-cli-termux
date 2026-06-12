@@ -114,6 +114,7 @@ jobs:
           {
             printf '%s/platform-tools\n' "$sdk_root"
             printf '%s/emulator\n' "$sdk_root"
+            printf '%s/cmdline-tools/bin\n' "$sdk_root"
             printf '%s/cmdline-tools/latest/bin\n' "$sdk_root"
             printf '%s/tools/bin\n' "$sdk_root"
           } >> "$GITHUB_PATH"
