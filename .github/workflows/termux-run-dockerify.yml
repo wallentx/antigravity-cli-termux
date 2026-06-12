@@ -109,33 +109,51 @@ jobs:
       - name: Wait for emulator to boot
         run: |
           echo "Waiting for ADB connection..."
+          connected=false
           for _ in {1..90}; do
             if adb connect localhost:5555 | grep -q "connected"; then
               echo "Connected to emulator via ADB!"
+              connected=true
               break
             fi
             sleep 2
           done
+          if [ "$connected" != "true" ]; then
+            echo "Failed to connect to ADB daemon." >&2
+            exit 1
+          fi
           
           echo "Waiting for device to be online..."
+          online=false
           for _ in {1..90}; do
             status=$(adb -s localhost:5555 get-state 2>/dev/null || true)
             if [ "$status" = "device" ]; then
               echo "Device is online!"
+              online=true
               break
             fi
             sleep 2
           done
+          if [ "$online" != "true" ]; then
+            echo "Device never came online." >&2
+            exit 1
+          fi
           
           echo "Waiting for system boot completion..."
+          booted=false
           for _ in {1..120}; do
             boot_completed=$(adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
             if [ "$boot_completed" = "1" ]; then
               echo "System booted successfully!"
+              booted=true
               break
             fi
             sleep 2
           done
+          if [ "$booted" != "true" ]; then
+            echo "System boot timed out." >&2
+            exit 1
+          fi
           
           # Show active devices
           adb devices -l
