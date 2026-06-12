@@ -8,263 +8,82 @@ on:
       - completed
   workflow_dispatch:
     inputs:
-      termux_channel:
-        description: Termux APK release channel
+      release_version:
+        description: Release version or tag to smoke-test, for example 1.0.7 or v1.0.7
         required: true
-        type: choice
-        default: stable
-        options:
-          - stable
-          - latest
-      restore_snapshot:
-        description: Restore the latest cached emulator snapshot before running
-        required: true
-        type: boolean
-        default: false
-      save_snapshot:
-        description: Save the emulator snapshot after a successful run
-        required: true
-        type: boolean
-        default: false
-      extra_commands:
-        description: Additional Termux commands to run inside the emulator
-        required: false
         type: string
-        default: ""
-      extra_commands_at_start:
-        description: Run additional commands before default package setup
-        required: true
-        type: boolean
-        default: false
-      release_tag:
-        description: Release tag to download and smoke-test inside Termux
-        required: false
-        type: string
-        default: ""
 
 permissions:
   actions: read
   contents: read
 
-concurrency:
-  group: termux-emulator-probe-${{ github.event.workflow_run.id || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  api35-arm64:
-    name: API 35 arm64 Termux probe
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') }}
+  run-termux:
+    name: Run Termux Docker (ARM)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
-
-    defaults:
-      run:
-        shell: bash
-
-    env:
-      TERMUX_HOME: /data/data/com.termux/files/home
-      TERMUX_PREFIX: /data/data/com.termux/files/usr
-      TERMUX_INSTALL_ABI: arm64-v8a
-      TERMUX_CHANNEL_INPUT: ${{ inputs.termux_channel || 'stable' }}
-      TERMUX_RESTORE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_run' || inputs.restore_snapshot }}
-      TERMUX_SAVE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.save_snapshot }}
-      TERMUX_RELEASE_TEST_TAG: ${{ inputs.release_tag || '' }}
-      TERMUX_EMULATOR_ACCEL: off
-      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-arm64-v8a-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-
-      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-arm64-v8a-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Download Termux APK
-        if: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT != 'true' }}
+      - name: Prepare standalone archive
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_CHANNEL: ${{ env.TERMUX_CHANNEL_INPUT }}
-          TERMUX_INSTALL_ABI: ${{ env.TERMUX_INSTALL_ABI }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '' }}
         run: |
-          ./.github/scripts/download-termux-apk.sh
+          set -euo pipefail
 
-      - name: Download PR standalone archive
-        if: ${{ github.event_name == 'workflow_run' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          ./.github/scripts/download-pr-check-artifact.sh
+          mkdir -p artifact
 
-      - name: Install aarch64 Android SDK
-        env:
-          ANDROID_SDK_AARCH64_URL: https://github.com/HomuHomu833/android-sdk-custom/releases/download/36.0.0/android-sdk-aarch64-linux-musl.tar.xz
-        run: |
-          set -eu
-
-          sdk_root="$RUNNER_TEMP/android-sdk-aarch64"
-          sdk_archive="$RUNNER_TEMP/android-sdk-aarch64-linux-musl.tar.xz"
-          rm -rf "$sdk_root"
-          mkdir -p "$sdk_root"
-          curl --fail --location --retry 3 --retry-delay 5 "$ANDROID_SDK_AARCH64_URL" --output "$sdk_archive"
-          xz -T0 -d -c "$sdk_archive" | tar --no-same-owner -C "$sdk_root" -x -f - --strip-components=1
-          if [ -d "$sdk_root/cmdline-tools" ] && [ ! -d "$sdk_root/cmdline-tools/latest" ]; then
-            mkdir -p "$sdk_root/cmdline-tools/latest"
-            find "$sdk_root/cmdline-tools" -mindepth 1 -maxdepth 1 ! -name latest \
-              -exec mv {} "$sdk_root/cmdline-tools/latest/" \;
-          fi
-
-          {
-            printf 'ANDROID_HOME=%s\n' "$sdk_root"
-            printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root"
-          } >> "$GITHUB_ENV"
-          {
-            printf '%s/platform-tools\n' "$sdk_root"
-            printf '%s/emulator\n' "$sdk_root"
-            printf '%s/cmdline-tools/bin\n' "$sdk_root"
-            printf '%s/cmdline-tools/latest/bin\n' "$sdk_root"
-            printf '%s/tools/bin\n' "$sdk_root"
-          } >> "$GITHUB_PATH"
-
-      - name: Inspect native arm Android tooling
-        run: |
-          set -eu
-
-          echo "Runner machine: $(uname -m)"
-          echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
-          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
-          command -v adb || true
-          command -v emulator || true
-          command -v sdkmanager || true
-          command -v avdmanager || true
-          if [ -n "${ANDROID_HOME:-}" ]; then
-            find "$ANDROID_HOME" -maxdepth 3 \( -name adb -o -name emulator -o -name sdkmanager -o -name avdmanager \) -print || true
-          fi
-
-      - name: Enable KVM
-        run: |
-          set -eu
-
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          if sudo udevadm trigger --name-match=kvm; then
-            ls -la /dev/kvm
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "Downloading PR build artifact from workflow run ${SOURCE_RUN_ID}..."
+            gh run download "$SOURCE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name antigravity-termux-standalone-preview \
+              --dir artifact
           else
-            echo "Hosted arm KVM setup failed; continuing with emulator acceleration disabled."
-            ls -la /dev/kvm 2>/dev/null || true
+            release_tag="$RELEASE_VERSION"
+            case "$release_tag" in
+              v*) ;;
+              *) release_tag="v${release_tag}" ;;
+            esac
+
+            echo "Downloading release artifact for ${release_tag}..."
+            curl -fsSL \
+              -o artifact/antigravity-termux-standalone.tar.gz \
+              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/antigravity-termux-standalone.tar.gz"
           fi
 
-      - name: Restore AVD snapshot cache
-        id: restore-avd-cache
-        if: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT == 'true' }}
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.android/avd
-          key: ${{ env.TERMUX_AVD_CACHE_KEY }}
-          restore-keys: |
-            ${{ env.TERMUX_AVD_CACHE_PREFIX }}
+          test -f artifact/antigravity-termux-standalone.tar.gz
+          tar -tzf artifact/antigravity-termux-standalone.tar.gz
 
-      - name: Configure emulator options
-        id: emulator-options
-        env:
-          RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
-          SAVE_SNAPSHOT: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT }}
-          TERMUX_EMULATOR_ACCEL: ${{ env.TERMUX_EMULATOR_ACCEL }}
+      - name: Run termux-docker-pacman
         run: |
+          docker run --rm -i \
+            -v "$PWD/artifact:/artifact:ro" \
+            termux/termux-docker-pacman sh <<'TERMUX_SCRIPT'
           set -eu
 
-          emulator_options=()
-          if [[ "$RESTORE_SNAPSHOT" != "true" ]]; then
-            emulator_options+=("-no-snapshot-load")
-          fi
-          if [[ "$SAVE_SNAPSHOT" != "true" ]]; then
-            emulator_options+=("-no-snapshot-save")
-          fi
-          if [[ "$RESTORE_SNAPSHOT" == "true" ]]; then
-            emulator_options+=("-no-snapshot-update-time")
-          fi
-          emulator_options+=(
-            "-no-window"
-            "-accel" "$TERMUX_EMULATOR_ACCEL"
-            "-gpu" "software"
-            "-no-audio"
-            "-no-boot-anim"
-            "-no-metrics"
-          )
+          cat >> "$PREFIX/etc/pacman.conf" <<'PACMAN_CONF'
+          [gpkg]
+          Server = https://service.termux-pacman.dev/gpkg/$arch
+          PACMAN_CONF
 
-          printf 'options=%s\n' "${emulator_options[*]}" >> "$GITHUB_OUTPUT"
-          printf 'Emulator options: %s\n' "${emulator_options[*]}"
+          pacman -Syyu --noconfirm
+          pacman -S --noconfirm ca-certificates glibc glibc-runner
 
-      - name: Probe Termux in Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          TERMUX_BOOTSTRAP_ATTEMPTS: 240
-          TERMUX_INSTALL_ABI: ${{ env.TERMUX_INSTALL_ABI }}
-          TERMUX_RESTORE_SNAPSHOT: ${{ env.TERMUX_RESTORE_SNAPSHOT_INPUT }}
-          TERMUX_RESTORED_AVD_CACHE: ${{ steps.restore-avd-cache.outputs.cache-matched-key != '' }}
-          TERMUX_RESTORED_AVD_CACHE_KEY: ${{ steps.restore-avd-cache.outputs.cache-matched-key || '' }}
-          TERMUX_SAVE_SNAPSHOT: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT }}
-          TERMUX_EXTRA_COMMANDS: ${{ inputs.extra_commands || '' }}
-          TERMUX_EXTRA_COMMANDS_AT_START: ${{ inputs.extra_commands_at_start || false }}
-          TERMUX_RELEASE_TEST_TAG: ${{ env.TERMUX_RELEASE_TEST_TAG }}
-        with:
-          api-level: 35
-          target: google_apis
-          arch: arm64-v8a
-          profile: pixel_5
-          force-avd-creation: false
-          emulator-options: ${{ steps.emulator-options.outputs.options }}
-          disable-animations: true
-          script: bash .github/scripts/termux-emulator-probe.sh
+          rm -rf agy-smoke
+          mkdir -p agy-smoke
+          tar -xzf /artifact/antigravity-termux-standalone.tar.gz -C agy-smoke
+          find agy-smoke -maxdepth 2 -type f -print
 
-      - name: Save AVD snapshot cache
-        if: ${{ env.TERMUX_SAVE_SNAPSHOT_INPUT == 'true' && success() }}
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.android/avd
-          key: ${{ env.TERMUX_AVD_CACHE_KEY }}
-
-      - name: Capture emulator diagnostic files
-        if: always()
-        run: |
-          if adb devices | grep -q -E "\bdevice\b"; then
-            adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
-            adb shell ps -A > termux-ps.txt 2>/dev/null || true
-            adb shell dumpsys activity > termux-dumpsys-activity.txt 2>/dev/null || true
-            adb shell dumpsys package com.termux > termux-dumpsys-package.txt 2>/dev/null || true
-            adb shell run-as com.termux ls -la /data/data/com.termux/files/home > termux-home-listing.txt 2>/dev/null || true
-            for dir in $(adb shell run-as com.termux find /data/data/com.termux/files/home/ -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
-              if [ -n "$dir" ]; then
-                base=$(basename "$dir")
-                echo "=== Captured stdout for $base ===" > "termux-stdout-$base.txt"
-                adb shell run-as com.termux cat "$dir/stdout" >> "termux-stdout-$base.txt" 2>/dev/null || true
-                echo "=== Captured stderr for $base ===" > "termux-stderr-$base.txt"
-                adb shell run-as com.termux cat "$dir/stderr" >> "termux-stderr-$base.txt" 2>/dev/null || true
-                echo "=== Captured status for $base ===" > "termux-status-$base.txt"
-                adb shell run-as com.termux cat "$dir/status" >> "termux-status-$base.txt" 2>/dev/null || true
-              fi
-            done
+          if [ -x agy-smoke/agy ]; then
+            agy=agy-smoke/agy
+          elif [ -x agy-smoke/bin/agy ]; then
+            agy=agy-smoke/bin/agy
           else
-            echo "No online adb devices found. Skipping adb diagnostics."
+            echo "Could not find executable agy in release archive." >&2
+            exit 1
           fi
 
-      - name: Upload emulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: termux-emulator-diagnostics
-          path: |
-            termux-emulator-logcat.txt
-            termux-ps.txt
-            termux-dumpsys-activity.txt
-            termux-dumpsys-package.txt
-            termux-home-listing.txt
-            termux-emulator-probe.env
-            termux-releases.json
-            termux-stdout-*.txt
-            termux-stderr-*.txt
-            termux-status-*.txt
-            termux-pr-artifact/antigravity-termux-standalone.tar.gz
-          if-no-files-found: ignore
+          "$agy" --help
+          TERMUX_SCRIPT
