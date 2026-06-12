@@ -122,8 +122,8 @@ jobs:
           
           echo "Waiting for device to be online..."
           online=false
-          for _ in {1..90}; do
-            status=$(adb -s localhost:5555 get-state 2>/dev/null || true)
+          for _ in {1..300}; do
+            status=$(adb get-state 2>/dev/null || true)
             if [ "$status" = "device" ]; then
               echo "Device is online!"
               online=true
@@ -138,8 +138,8 @@ jobs:
           
           echo "Waiting for system boot completion..."
           booted=false
-          for _ in {1..120}; do
-            boot_completed=$(adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+          for _ in {1..150}; do
+            boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
             if [ "$boot_completed" = "1" ]; then
               echo "System booted successfully!"
               booted=true
@@ -171,6 +171,8 @@ jobs:
       - name: Capture emulator diagnostic files
         if: always()
         run: |
+          echo "=== Docker Container Logs ==="
+          docker logs dockerify-android || true
           docker logs dockerify-android > termux-dockerify-container-logs.txt 2>/dev/null || true
           if adb devices | grep -q -E "\bdevice\b"; then
             adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
@@ -201,5 +203,6 @@ jobs:
             termux-stdout-*.txt
             termux-stderr-*.txt
             termux-status-*.txt
+            termux-dockerify-container-logs.txt
             termux-pr-artifact/antigravity-termux-standalone.tar.gz
           if-no-files-found: ignore
