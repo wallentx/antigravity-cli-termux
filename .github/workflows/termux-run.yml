@@ -143,13 +143,6 @@ jobs:
           printf 'options=%s\n' "${emulator_options[*]}" >> "$GITHUB_OUTPUT"
           printf 'Emulator options: %s\n' "${emulator_options[*]}"
 
-      - name: Reset adb state
-        run: |
-          set -eu
-          adb kill-server || true
-          rm -f ~/.android/adb*.json ~/.android/adbkey ~/.android/adbkey.pub || true
-          adb start-server
-
       - name: Probe Termux in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
