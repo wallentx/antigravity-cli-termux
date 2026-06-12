@@ -67,6 +67,8 @@ termux_exec() {
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
     printf 'export PATH=%q\n' "$TERMUX_PREFIX/bin:/system/bin:/system/xbin"
+    printf 'export SHELL=%q\n' "$TERMUX_PREFIX/bin/bash"
+    printf 'export LANG=%q\n' 'C.UTF-8'
     printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
     printf '%s\n' "$command_line"
@@ -90,7 +92,7 @@ termux_exec() {
 
   rm -f "$local_script"
 
-  if ! run_as_termux_shell "/system/bin/am start-foreground-service --user 0 -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH $TERMUX_PREFIX/bin/bash --esa com.termux.RUN_COMMAND_ARGUMENTS $remote_script --es com.termux.RUN_COMMAND_WORKDIR $TERMUX_HOME --es com.termux.RUN_COMMAND_RUNNER app-shell" >/dev/null; then
+  if ! run_as_termux_shell "/system/bin/am start-foreground-service --user 0 -n com.termux/.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH $remote_script --es com.termux.RUN_COMMAND_WORKDIR $TERMUX_HOME --es com.termux.RUN_COMMAND_RUNNER app-shell" >/dev/null; then
     rm -f "$local_script"
     return 1
   fi
