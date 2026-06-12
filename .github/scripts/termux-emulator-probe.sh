@@ -272,11 +272,8 @@ case "$dpkg_arch" in
   aarch64)
     glibc_loader="$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
     ;;
-  x86_64)
-    glibc_loader="$PREFIX/glibc/lib/ld-linux-x86-64.so.2"
-    ;;
   *)
-    echo "[termux-probe] Unsupported Termux dpkg architecture: $dpkg_arch" >&2
+    echo "[termux-probe] Expected native aarch64 Termux dpkg architecture, got: $dpkg_arch" >&2
     exit 1
     ;;
 esac
@@ -289,45 +286,9 @@ TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" update -y
 echo "[termux-probe] Installing glibc-runner"
 TERMUX_PKG_NO_MIRROR_SELECT=1 "$PREFIX/bin/pkg" install -y glibc-runner
 test -e "$glibc_loader"
-echo "[termux-probe] Installing aarch64 glibc runtime from Termux glibc packages"
-aarch64_glibc_dir="$TMPDIR/termux-aarch64-glibc"
-aarch64_glibc_index="$aarch64_glibc_dir/Packages"
-aarch64_glibc_repo="https://packages.termux.dev/apt/termux-glibc"
-rm -rf "$aarch64_glibc_dir"
-mkdir -p "$aarch64_glibc_dir"
-curl -fsSL -o "$aarch64_glibc_index" "$aarch64_glibc_repo/dists/glibc/stable/binary-aarch64/Packages"
-package_field() {
-  awk -v package="$1" -v field="$2" '"'"'
-    BEGIN { RS = ""; FS = "\n" }
-    $1 == "Package: " package {
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ "^" field ": ") {
-          sub("^" field ": ", "", $i)
-          print $i
-          exit
-        }
-      }
-    }
-  '"'"' "$aarch64_glibc_index"
-}
-for package in glibc glibc-runner; do
-  package_filename=$(package_field "$package" Filename)
-  package_sha256=$(package_field "$package" SHA256)
-  if [ -z "$package_filename" ] || [ -z "$package_sha256" ]; then
-    echo "[termux-probe] Could not resolve aarch64 package metadata for $package" >&2
-    exit 1
-  fi
-
-  package_deb="$aarch64_glibc_dir/${package_filename##*/}"
-  echo "[termux-probe] Fetching aarch64 package $package: $package_filename"
-  curl -fsSL -o "$package_deb" "$aarch64_glibc_repo/$package_filename"
-  printf "%s  %s\n" "$package_sha256" "$package_deb" | sha256sum -c -
-  dpkg-deb -x "$package_deb" /
-done
-test -e "$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
-echo "[termux-probe] Installed aarch64 glibc loader: $PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+echo "[termux-probe] Installed native aarch64 glibc loader: $glibc_loader"
 '
-  record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner aarch64-glibc"
+  record TERMUX_PACKAGES_INSTALLED "ca-certificates glibc-repo glibc-runner"
 }
 
 run_extra_termux_commands() {

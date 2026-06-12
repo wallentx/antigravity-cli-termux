@@ -51,10 +51,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  api35-x86_64:
-    name: API 35 x86_64 Termux probe
+  api35-arm64:
+    name: API 35 arm64 Termux probe
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
 
     defaults:
@@ -64,13 +64,13 @@ jobs:
     env:
       TERMUX_HOME: /data/data/com.termux/files/home
       TERMUX_PREFIX: /data/data/com.termux/files/usr
-      TERMUX_INSTALL_ABI: x86_64
+      TERMUX_INSTALL_ABI: arm64-v8a
       TERMUX_CHANNEL_INPUT: ${{ inputs.termux_channel || 'stable' }}
       TERMUX_RESTORE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_run' || inputs.restore_snapshot }}
       TERMUX_SAVE_SNAPSHOT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.save_snapshot }}
       TERMUX_RELEASE_TEST_TAG: ${{ inputs.release_tag || '' }}
-      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-x86_64-pixel_5-termux-x86_64-${{ inputs.termux_channel || 'stable' }}-
-      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-x86_64-pixel_5-termux-x86_64-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      TERMUX_AVD_CACHE_PREFIX: termux-avd-api35-google_apis-arm64-v8a-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-
+      TERMUX_AVD_CACHE_KEY: termux-avd-api35-google_apis-arm64-v8a-pixel_5-termux-arm64-v8a-${{ inputs.termux_channel || 'stable' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Check out repository
@@ -101,6 +101,21 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      - name: Inspect native arm Android tooling
+        run: |
+          set -eu
+
+          echo "Runner machine: $(uname -m)"
+          echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          command -v emulator || true
+          command -v sdkmanager || true
+          command -v avdmanager || true
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            find "$ANDROID_HOME" -maxdepth 3 \( -name emulator -o -name sdkmanager -o -name avdmanager \) -print || true
+          fi
 
       - name: Restore AVD snapshot cache
         id: restore-avd-cache
@@ -158,7 +173,7 @@ jobs:
         with:
           api-level: 35
           target: google_apis
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_5
           force-avd-creation: false
           emulator-options: ${{ steps.emulator-options.outputs.options }}
