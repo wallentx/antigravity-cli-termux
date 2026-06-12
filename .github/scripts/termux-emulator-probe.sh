@@ -15,7 +15,34 @@ fi
 
 probe_file=termux-emulator-probe.env
 : > "$probe_file"
-trap 'adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true' EXIT
+
+capture_termux_diagnostics() {
+  adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true
+
+  if ! adb devices | grep -q -E "\bdevice\b"; then
+    return 0
+  fi
+
+  adb shell ps -A > termux-ps.txt 2>/dev/null || true
+  adb shell dumpsys activity > termux-dumpsys-activity.txt 2>/dev/null || true
+  adb shell dumpsys package com.termux > termux-dumpsys-package.txt 2>/dev/null || true
+  adb shell run-as com.termux ls -la "$TERMUX_HOME" > termux-home-listing.txt 2>/dev/null || true
+
+  local dir
+  for dir in $(adb shell run-as com.termux find "$TERMUX_HOME/" -maxdepth 1 -name ".termux-probe-results-*" 2>/dev/null | tr -d '\r'); do
+    if [[ -n "$dir" ]]; then
+      local base
+      base=$(basename "$dir")
+      echo "=== Captured stdout for $base ===" > "termux-stdout-$base.txt"
+      adb shell run-as com.termux cat "$dir/stdout" >> "termux-stdout-$base.txt" 2>/dev/null || true
+      echo "=== Captured stderr for $base ===" > "termux-stderr-$base.txt"
+      adb shell run-as com.termux cat "$dir/stderr" >> "termux-stderr-$base.txt" 2>/dev/null || true
+      echo "=== Captured status for $base ===" > "termux-status-$base.txt"
+      adb shell run-as com.termux cat "$dir/status" >> "termux-status-$base.txt" 2>/dev/null || true
+    fi
+  done
+}
+trap capture_termux_diagnostics EXIT
 
 log() {
   printf '[termux-probe] %s\n' "$*"
@@ -135,7 +162,12 @@ termux_exec() {
   run_as_termux_shell "/system/bin/cat $remote_stdout 2>/dev/null || true" || true
   run_as_termux_shell "/system/bin/cat $remote_stderr 2>/dev/null || true" >&2 || true
   status=$(run_as_termux_shell "/system/bin/cat $remote_status" | tr -d '\r')
-  run_as_termux_shell "/system/bin/rm -rf $remote_script $remote_result_dir" >/dev/null 2>&1 || true
+  if [[ "$status" == "0" ]]; then
+    run_as_termux_shell "/system/bin/rm -rf $remote_script $remote_result_dir" >/dev/null 2>&1 || true
+  else
+    run_as_termux_shell "/system/bin/rm -f $remote_script" >/dev/null 2>&1 || true
+    log "Preserved failed Termux command results: $remote_result_dir"
+  fi
 
   [[ "$status" == "0" ]]
 }
@@ -200,6 +232,35 @@ echo "[termux-probe] Package setup dpkg=$PREFIX/bin/dpkg"
 echo "[termux-probe] Package setup pkg=$PREFIX/bin/pkg"
 echo "[termux-probe] Package setup command lookup:"
 command -v id grep realpath pkg dpkg || true
+echo "[termux-probe] Package setup preload smoke matrix:"
+for termux_exec_preload in \
+  "$PREFIX/lib/libtermux-exec-ld-preload.so" \
+  "$PREFIX/lib/libtermux-exec-direct-ld-preload.so" \
+  "$PREFIX/lib/libtermux-exec-linker-ld-preload.so" \
+  none
+do
+  if [ "$termux_exec_preload" = none ]; then
+    unset LD_PRELOAD
+    echo "[termux-probe] preload=none"
+  else
+    export LD_PRELOAD="$termux_exec_preload"
+    echo "[termux-probe] preload=$LD_PRELOAD"
+  fi
+
+  set +e
+  id
+  echo "[termux-probe] bare id status=$?"
+  "$PREFIX/bin/id"
+  echo "[termux-probe] absolute id status=$?"
+  realpath "$PREFIX/bin/id"
+  echo "[termux-probe] realpath status=$?"
+  set -e
+done
+if [ -f "$PREFIX/lib/libtermux-exec-ld-preload.so" ]; then
+  export LD_PRELOAD="$PREFIX/lib/libtermux-exec-ld-preload.so"
+else
+  unset LD_PRELOAD
+fi
 echo "[termux-probe] Package setup helper smoke:"
 id
 grep --version 2>&1 | head -n 1
