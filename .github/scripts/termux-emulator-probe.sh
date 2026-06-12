@@ -38,24 +38,44 @@ run_as_termux_shell() {
 
 termux_exec() {
   local command_line=$1
+  local command_id
   local local_script
   local remote_tmp=/data/local/tmp/termux-probe-command.sh
-  local remote_script="$TERMUX_HOME/.termux-probe-command.sh"
+  local remote_script
+  local remote_result_dir
+  local remote_stdout
+  local remote_stderr
+  local remote_status
+  local attempt
+  local status
+
+  command_id="$(date +%s)-$RANDOM"
+  remote_script="$TERMUX_HOME/.termux-probe-command-$command_id.sh"
+  remote_result_dir="$TERMUX_HOME/.termux-probe-results-$command_id"
+  remote_stdout="$remote_result_dir/stdout"
+  remote_stderr="$remote_result_dir/stderr"
+  remote_status="$remote_result_dir/status"
 
   local_script=$(mktemp "${RUNNER_TEMP:-.}/termux-command.XXXXXX")
   {
     printf '#!%s/bin/bash\n' "$TERMUX_PREFIX"
+    printf 'set +e\n'
+    printf '(\n'
     printf 'set -Eeuo pipefail\n'
     printf 'export HOME=%q\n' "$TERMUX_HOME"
     printf 'export PREFIX=%q\n' "$TERMUX_PREFIX"
     printf 'export TMPDIR=%q\n' "$TERMUX_PREFIX/tmp"
     printf 'export TERMUX_VERSION=ci\n'
-    printf 'export PATH=%q\n' "/system/bin:/system/xbin:$TERMUX_PREFIX/bin"
-    printf "unset LD_PRELOAD\n"
-    printf 'export LD_LIBRARY_PATH=%q\n' "$TERMUX_PREFIX/lib"
-    printf "/system/bin/mkdir -p \"\$TMPDIR\"\n"
+    printf 'export PATH=%q\n' "$TERMUX_PREFIX/bin:/system/bin:/system/xbin"
+    printf "mkdir -p \"\$TMPDIR\"\n"
     printf "cd \"\$HOME\"\n"
     printf '%s\n' "$command_line"
+    printf ') > %q 2> %q\n' "$remote_stdout" "$remote_stderr"
+    printf 'status=$?\n'
+    # shellcheck disable=SC2016
+    printf 'printf "%%s\\n" "$status" > %q\n' "$remote_status"
+    # shellcheck disable=SC2016
+    printf 'exit "$status"\n'
   } > "$local_script"
 
   if ! adb push "$local_script" "$remote_tmp" >/dev/null; then
@@ -63,12 +83,52 @@ termux_exec() {
     return 1
   fi
 
-  if ! run_as_termux_shell "cp $remote_tmp $remote_script && chmod 700 $remote_script && unset LD_PRELOAD && export LD_LIBRARY_PATH=$TERMUX_PREFIX/lib && $TERMUX_PREFIX/bin/bash $remote_script"; then
+  if ! run_as_termux_shell "/system/bin/mkdir -p $remote_result_dir && cp $remote_tmp $remote_script && chmod 700 $remote_script"; then
     rm -f "$local_script"
     return 1
   fi
 
   rm -f "$local_script"
+
+  adb shell am start-foreground-service \
+    -n com.termux/.app.RunCommandService \
+    -a com.termux.RUN_COMMAND \
+    --es com.termux.RUN_COMMAND_PATH "$TERMUX_PREFIX/bin/bash" \
+    --esa com.termux.RUN_COMMAND_ARGUMENTS "$remote_script" \
+    --es com.termux.RUN_COMMAND_WORKDIR "$TERMUX_HOME" \
+    --es com.termux.RUN_COMMAND_RUNNER app-shell >/dev/null
+
+  for ((attempt = 1; attempt <= 600; attempt++)); do
+    if run_as_termux_shell "test -f $remote_status" >/dev/null 2>&1; then
+      break
+    fi
+
+    if ((attempt % 60 == 0)); then
+      log "Waiting for Termux command $command_id to finish: attempt $attempt/600"
+    fi
+
+    sleep 1
+  done
+
+  if ! run_as_termux_shell "test -f $remote_status" >/dev/null 2>&1; then
+    run_as_termux_shell "/system/bin/cat $remote_stdout 2>/dev/null || true" || true
+    run_as_termux_shell "/system/bin/cat $remote_stderr 2>/dev/null || true" >&2 || true
+    echo "Timed out waiting for Termux command $command_id to finish." >&2
+    return 1
+  fi
+
+  run_as_termux_shell "/system/bin/cat $remote_stdout 2>/dev/null || true" || true
+  run_as_termux_shell "/system/bin/cat $remote_stderr 2>/dev/null || true" >&2 || true
+  status=$(run_as_termux_shell "/system/bin/cat $remote_status" | tr -d '\r')
+  run_as_termux_shell "/system/bin/rm -rf $remote_script $remote_result_dir" >/dev/null 2>&1 || true
+
+  [[ "$status" == "0" ]]
+}
+
+enable_termux_run_command_service() {
+  log "Enabling Termux RUN_COMMAND service for probe execution."
+  run_as_termux_shell "/system/bin/mkdir -p files/home/.termux && echo allow-external-apps = true > files/home/.termux/termux.properties"
+  adb shell am force-stop com.termux
 }
 
 dump_termux_state() {
@@ -262,6 +322,8 @@ else
   fi
   record TERMUX_BOOTSTRAP_SOURCE "fresh-apk"
 fi
+
+enable_termux_run_command_service
 
 log "Validating Termux command environment."
 termux_exec_pwd=$(termux_exec 'pwd' | tr -d '\r')
