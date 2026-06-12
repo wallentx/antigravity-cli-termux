@@ -41,7 +41,7 @@ concurrency:
 jobs:
   arm64-dockerify:
     name: ARM64 Dockerify Termux probe
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
 
