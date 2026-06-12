@@ -174,8 +174,10 @@ jobs:
             pkg install ca-certificates glibc-repo -y
             pkg install glibc-runner -y
             curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/v1.0.6/antigravity-termux-standalone.tar.gz
-            tar -xzf antigravity-termux-standalone.tar.gz
-            ./bin/agy --help
+            rm -rf extract
+            mkdir -p extract
+            tar -xzf antigravity-termux-standalone.tar.gz -C extract
+            ./extract/agy --help
             TERMUX_RELEASE_SMOKE
 
             adb push termux-release-smoke.sh /data/local/tmp/termux-release-smoke.sh >/dev/null

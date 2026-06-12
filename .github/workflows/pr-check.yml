@@ -186,8 +186,8 @@ jobs:
 
       - name: Package Standalone Archive
         run: |
-          echo "Packaging standalone release archive (bin/ footprint only)..."
-          tar -czf antigravity-termux-standalone.tar.gz bin/
+          echo "Packaging standalone release archive..."
+          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39
 
       - name: Assert Archive Integrity & Layout
         run: |
@@ -199,8 +199,8 @@ jobs:
           echo "Verifying archive contents..."
           tar -tf antigravity-termux-standalone.tar.gz
 
-          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^bin/agy$' || (echo "Error: Missing bin/agy in release archive!" && exit 1)
-          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^bin/agy\.va39$' || (echo "Error: Missing bin/agy.va39 in release archive!" && exit 1)
+          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^agy$' || (echo "Error: Missing agy in release archive!" && exit 1)
+          tar -tzf antigravity-termux-standalone.tar.gz | grep -qE '^agy\.va39$' || (echo "Error: Missing agy.va39 in release archive!" && exit 1)
 
           echo "Archive validation passed successfully! Footprint is clean."
 
