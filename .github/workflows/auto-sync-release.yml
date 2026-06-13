@@ -67,8 +67,8 @@ jobs:
       - name: Package Standalone Archive
         if: steps.check_version.outputs.build_needed == 'true'
         run: |
-          echo "Packaging standalone release archive (bin/ footprint only)..."
-          tar -czf antigravity-termux-standalone.tar.gz bin/
+          echo "Packaging standalone release archive..."
+          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39
 
       - name: Upload Standalone Archive to Run Artifacts
         if: steps.check_version.outputs.build_needed == 'true'

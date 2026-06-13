@@ -1,194 +1,89 @@
-name: Termux Emulator Probe
+name: Termux Run
 
 on:
+  workflow_run:
+    workflows:
+      - Pull Request Validation
+    types:
+      - completed
   workflow_dispatch:
     inputs:
-      termux_channel:
-        description: Termux APK release channel
+      release_version:
+        description: Release version or tag to smoke-test, for example 1.0.7 or v1.0.7
         required: true
-        type: choice
-        default: stable
-        options:
-          - stable
-          - latest
-      require_aarch64:
-        description: Fail unless Termux reports aarch64
-        required: true
-        type: boolean
-        default: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
-concurrency:
-  group: termux-emulator-probe-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  api35-x86_64:
-    name: API 35 x86_64 Termux probe
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-
-    defaults:
-      run:
-        shell: bash
-
-    env:
-      TERMUX_HOME: /data/data/com.termux/files/home
-      TERMUX_PREFIX: /data/data/com.termux/files/usr
-
+  run-termux:
+    name: Run Termux Docker (ARM)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04-arm
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Download Termux APK
+      - name: Prepare standalone archive
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_CHANNEL: ${{ inputs.termux_channel }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '' }}
         run: |
           set -euo pipefail
 
-          gh api repos/termux/termux-app/releases > termux-releases.json
+          mkdir -p artifact
 
-          if [[ "$TERMUX_CHANNEL" == "stable" ]]; then
-            apk_url=$(jq -r '[.[] | select(.draft == false and .prerelease == false) | .assets[] | select(.name | test("(apt-android-7.*github-debug_universal|github-debug_universal)\\.apk$")) | .browser_download_url][0] // empty' termux-releases.json)
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "Downloading PR build artifact from workflow run ${SOURCE_RUN_ID}..."
+            gh run download "$SOURCE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name antigravity-termux-standalone-preview \
+              --dir artifact
           else
-            apk_url=$(jq -r '[.[] | select(.draft == false) | .assets[] | select(.name | test("(apt-android-7.*github-debug_universal|github-debug_universal)\\.apk$")) | .browser_download_url][0] // empty' termux-releases.json)
+            release_tag="$RELEASE_VERSION"
+            case "$release_tag" in
+              v*) ;;
+              *) release_tag="v${release_tag}" ;;
+            esac
+
+            echo "Downloading release artifact for ${release_tag}..."
+            curl -fsSL \
+              -o artifact/antigravity-termux-standalone.tar.gz \
+              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/antigravity-termux-standalone.tar.gz"
           fi
 
-          if [[ -z "$apk_url" ]]; then
-            echo "No matching Termux GitHub-debug universal APK was found." >&2
+          test -f artifact/antigravity-termux-standalone.tar.gz
+          tar -tzf artifact/antigravity-termux-standalone.tar.gz
+
+      - name: Run termux-docker-pacman
+        run: |
+          docker run --rm -i \
+            -v "$PWD/artifact:/artifact:ro" \
+            termux/termux-docker-pacman sh <<'TERMUX_SCRIPT'
+          set -eu
+
+          cat >> "$PREFIX/etc/pacman.conf" <<'PACMAN_CONF'
+          [gpkg]
+          Server = https://service.termux-pacman.dev/gpkg/$arch
+          PACMAN_CONF
+
+          pacman -Syyu --noconfirm
+          pacman -S --noconfirm ca-certificates glibc glibc-runner
+
+          rm -rf agy-smoke
+          mkdir -p agy-smoke
+          tar -xzf /artifact/antigravity-termux-standalone.tar.gz -C agy-smoke
+          find agy-smoke -maxdepth 2 -type f -print
+
+          if [ -x agy-smoke/agy ]; then
+            agy=agy-smoke/agy
+          elif [ -x agy-smoke/bin/agy ]; then
+            agy=agy-smoke/bin/agy
+          else
+            echo "Could not find executable agy in release archive." >&2
             exit 1
           fi
 
-          curl --fail --location --retry 3 --retry-delay 5 "$apk_url" --output termux.apk
-          printf 'TERMUX_APK_URL=%s\n' "$apk_url" >> "$GITHUB_ENV"
-
-      - name: Enable KVM
-        run: |
-          set -euo pipefail
-
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Probe Termux in Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          REQUIRE_AARCH64: ${{ inputs.require_aarch64 }}
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_5
-          force-avd-creation: false
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          disable-animations: true
-          script: |
-            set -euo pipefail
-
-            probe_file=termux-emulator-probe.env
-            : > "$probe_file"
-            trap 'adb logcat -d > termux-emulator-logcat.txt 2>/dev/null || true' EXIT
-
-            record() {
-              printf '%s=%s\n' "$1" "$2" | tee -a "$probe_file"
-            }
-
-            termux_exec() {
-              local command_line=$1
-
-              adb shell run-as com.termux env \
-                "HOME=$TERMUX_HOME" \
-                "PREFIX=$TERMUX_PREFIX" \
-                "TMPDIR=$TERMUX_PREFIX/tmp" \
-                "TERMUX_VERSION=ci" \
-                "PATH=$TERMUX_PREFIX/bin:/system/bin:/system/xbin" \
-                "$TERMUX_PREFIX/bin/bash" -lc "$command_line"
-            }
-
-            wait_for_termux_bootstrap() {
-              local attempt
-
-              for attempt in {1..120}; do
-                if adb shell run-as com.termux test -x files/usr/bin/bash >/dev/null 2>&1; then
-                  return 0
-                fi
-                sleep 2
-              done
-
-              return 1
-            }
-
-            device_abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
-            device_abilist=$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')
-            record ANDROID_CPU_ABI "$device_abi"
-            record ANDROID_CPU_ABILIST "$device_abilist"
-            record TERMUX_APK_URL "$TERMUX_APK_URL"
-
-            adb install -r termux.apk
-            adb shell pm grant com.termux android.permission.POST_NOTIFICATIONS || true
-            adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null
-
-            if ! wait_for_termux_bootstrap; then
-              echo "Termux did not finish bootstrap within the timeout." >&2
-              exit 1
-            fi
-
-            termux_arch=$(termux_exec 'uname -m' | tr -d '\r')
-            termux_dpkg_arch=$(termux_exec 'dpkg --print-architecture 2>/dev/null || true' | tr -d '\r')
-            termux_loader_state=$(termux_exec 'test -e /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 && echo present || echo missing' | tr -d '\r')
-
-            record TERMUX_UNAME_M "$termux_arch"
-            record TERMUX_DPKG_ARCH "$termux_dpkg_arch"
-            record TERMUX_AARCH64_GLIBC_LOADER "$termux_loader_state"
-
-            {
-              echo "### Termux Emulator Probe"
-              echo ""
-              echo "| Field | Value |"
-              echo "| --- | --- |"
-              sed 's/|/\\|/g; s/^\([^=]*\)=\(.*\)$/| `\1` | `\2` |/' "$probe_file"
-              echo ""
-            } >> "$GITHUB_STEP_SUMMARY"
-
-            if [[ "$termux_arch" != "aarch64" && "$REQUIRE_AARCH64" == "true" ]]; then
-              echo "Termux reported $termux_arch, but require_aarch64 was enabled." >&2
-              exit 1
-            fi
-
-            if [[ "$termux_arch" != "aarch64" ]]; then
-              echo "Termux reported $termux_arch; skipping the v1.0.6 aarch64 release smoke test."
-              exit 0
-            fi
-
-            cat > termux-release-smoke.sh <<'TERMUX_RELEASE_SMOKE'
-            set -euo pipefail
-
-            mkdir -p "$HOME/agy-smoke"
-            cd "$HOME/agy-smoke"
-
-            pkg update -y
-            pkg install ca-certificates glibc-repo -y
-            pkg install glibc-runner -y
-            curl -fsSLO https://github.com/wallentx/antigravity-cli-termux/releases/download/v1.0.6/antigravity-termux-standalone.tar.gz
-            tar -xzf antigravity-termux-standalone.tar.gz
-            ./bin/agy --help
-            TERMUX_RELEASE_SMOKE
-
-            adb push termux-release-smoke.sh /data/local/tmp/termux-release-smoke.sh >/dev/null
-            adb shell chmod 0644 /data/local/tmp/termux-release-smoke.sh
-            termux_exec 'bash /data/local/tmp/termux-release-smoke.sh'
-
-      - name: Upload emulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: termux-emulator-diagnostics
-          path: |
-            termux-emulator-logcat.txt
-            termux-emulator-probe.env
-            termux-releases.json
-          if-no-files-found: ignore
+          "$agy" --help
+          TERMUX_SCRIPT
