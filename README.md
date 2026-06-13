@@ -5,7 +5,7 @@
 ## 🚀 Quick Start (Termux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/7ui77/antigravity-cli-termux/dev/install.sh | bash
 ```
 
 ![Antigravity CLI Demo](antigravity.gif)
@@ -41,10 +41,14 @@ To circumvent this, a relocatable C bootstrapper (`agy`) is compiled:
 * **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
 * **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
 
-#### 3. Native Termux Only
-This standalone port is intentionally scoped to native Termux on Android. PRoot
-environments can run Google's official Antigravity CLI binary
-directly, so this project no longer ships a PRoot compatibility layer.
+#### 3. LSE (Large System Extensions) & QEMU Support
+The engine requires ARMv8.1-A Atomics (LSE) to run natively. On older ARMv8.0-A CPUs lacking LSE support, the binary will crash with an "Illegal Instruction".
+This fork includes an automated compatibility layer:
+* **Detection**: The installer and bootstrapper automatically detect if the CPU lacks LSE support via `getauxval(AT_HWCAP)`.
+* **QEMU Emulation**: If LSE is missing, the bootstrapper automatically wraps the engine execution with `qemu-aarch64`. The installer will offer to auto-install QEMU via `pkg` (Termux) or `apt` (PRoot/chroot).
+
+#### 4. Native Termux Only
+This standalone port is intentionally scoped to native Termux on Android. PRoot environments can run Google's official Antigravity CLI binary directly, so this project no longer ships a PRoot compatibility layer.
 
 If you are inside PRoot, use the official installer instead:
 
@@ -52,7 +56,7 @@ If you are inside PRoot, use the official installer instead:
 curl -fsSL https://antigravity.google/cli/install.sh | bash
 ```
 
-#### 4. In-Place Self-Updating
+#### 5. In-Place Self-Updating
 The C bootstrapper intercepts the `update` subcommand and queries this fork's GitHub Releases API, providing a seamless in-place update mechanism that updates both the patched engine and itself without needing complex wrappers or manually executing curl commands.
 
 ---
@@ -93,7 +97,7 @@ Antigravity CLI brings the core capabilities of Antigravity 2.0 (multi-step reas
 
 ### Android (Termux)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/7ui77/antigravity-cli-termux/dev/install.sh | bash
 ```
 
 ### macOS / Linux

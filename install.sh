@@ -2,7 +2,7 @@
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
-REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
+REPO="${AGY_REPO:-7ui77/antigravity-cli-termux}"
 URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
@@ -233,10 +233,43 @@ if [[ ! -x "$GLIBC_LOADER" ]]; then
 You may need to install the glibc-repo and glibc packages, then rerun this installer."
 fi
 
+check_lse() {
+  grep -q "atomics" /proc/cpuinfo
+}
+
+check_qemu() {
+  command -v qemu-aarch64 >/dev/null 2>&1
+}
+
 CA_BUNDLE="${TERMUX_PREFIX}/etc/tls/cert.pem"
 if [[ ! -s "$CA_BUNDLE" ]]; then
   die "Missing Termux CA bundle: $CA_BUNDLE
 You may need to install the ca-certificates package, then rerun this installer."
+fi
+
+if ! check_lse; then
+  if ! check_qemu; then
+    printf "\n  %b[!]%b LSE - Large System Extensions - not supported by your CPU.\n" "$RED" "$RESET"
+    printf "      QEMU emulation is required to run the engine.\n"
+    printf "  Would you like to install it now? [Y/n]: "
+    read -r -n 1 ans < /dev/tty || ans="n"
+    printf "\n"
+
+    if [[ "$ans" =~ ^[Yy]$ ]] || [[ -z "$ans" ]]; then
+      if [[ "$ENV_TYPE" == "termux" ]]; then
+        pkg install -y qemu-user-aarch64
+      else
+        apt update && apt install -y qemu-user-static || apt install -y qemu-user
+      fi
+      
+      if ! check_qemu; then
+        die "Failed to install QEMU. Please install manually (e.g., pkg install qemu-user-aarch64)."
+      fi
+    else
+      die "QEMU is required for non-LSE CPUs to proceed."
+    fi
+  fi
+  ok "LSE Emulation: QEMU enabled"
 fi
 
 ok "Environment: ${ENV_TYPE} (aarch64)"

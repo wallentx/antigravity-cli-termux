@@ -6,6 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+
+#ifndef HWCAP_ATOMICS
+#define HWCAP_ATOMICS (1 << 8)
+#endif
 
 #ifndef AGY_TERMUX_VERSION
 #define AGY_TERMUX_VERSION "1.0.2"
@@ -163,7 +169,9 @@ int main(int argc, char **argv) {
     const char *prefix = getenv("PREFIX");
     const char *loader = NULL;
     const char *dir = NULL;
+    const char *qemu = NULL;
     char **new_argv = NULL;
+    int has_lse = 0;
     int arg_idx = 0;
     int written = 0;
     ssize_t read_len = 0;
@@ -171,6 +179,21 @@ int main(int argc, char **argv) {
     if (!is_native_termux()) {
         print_non_termux_message();
         return 1;
+    }
+
+    // Detect LSE support
+    has_lse = (getauxval(AT_HWCAP) & HWCAP_ATOMICS);
+    if (!has_lse) {
+        // Find QEMU path in Termux prefix
+        char qemu_path[PATH_MAX];
+        int qemu_written = snprintf(qemu_path, sizeof(qemu_path), "%s/bin/qemu-aarch64", prefix);
+        if (qemu_written > 0 && qemu_written < (int)sizeof(qemu_path)) {
+            if (access(qemu_path, F_OK) == 0) {
+                static char static_qemu_path[PATH_MAX];
+                strcpy(static_qemu_path, qemu_path);
+                qemu = static_qemu_path;
+            }
+        }
     }
     written = snprintf(prefix_path, sizeof(prefix_path), "%s", prefix);
     if (written < 0 || written >= (int)sizeof(prefix_path)) {
@@ -226,14 +249,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // loader + "--library-path" + lib_path + patched_bin + user args + NULL
-    int new_argc = argc + 4;
+    // We allocate enough space for: qemu + loader + "--library-path" + lib_path
+    // + patched_bin + user args + NULL
+    int new_argc = argc + 6;
     new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
     if (!new_argv) {
         return 1;
     }
 
     arg_idx = 0;
+    if (qemu) {
+        new_argv[arg_idx++] = (char *)qemu;
+    }
     new_argv[arg_idx++] = (char *)loader;
     new_argv[arg_idx++] = "--library-path";
     new_argv[arg_idx++] = lib_path;
@@ -245,9 +272,17 @@ int main(int argc, char **argv) {
     new_argv[arg_idx] = NULL;
 
     // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
-    if (execv(loader, new_argv) == -1) {
-        perror("[agy-termux] execv failed");
-        free(new_argv);
-        return 1;
+    if (qemu) {
+        if (execv(qemu, new_argv) == -1) {
+            perror("[agy-termux] execv (qemu) failed");
+            free(new_argv);
+            return 1;
+        }
+    } else {
+        if (execv(loader, new_argv) == -1) {
+            perror("[agy-termux] execv failed");
+            free(new_argv);
+            return 1;
+        }
     }
 }
