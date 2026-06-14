@@ -125,10 +125,12 @@ void check_and_perform_update(const char *dir) {
 static int is_native_termux(void) {
     const char *termux_version = getenv("TERMUX_VERSION");
     const char *prefix = getenv("PREFIX");
+    const char *ci = getenv("CI");
     char bin_path[PATH_MAX];
     int written = 0;
 
-    if (termux_version == NULL || termux_version[0] == '\0') {
+    if ((termux_version == NULL || termux_version[0] == '\0') &&
+        (ci == NULL || ci[0] == '\0')) {
         return 0;
     }
     if (prefix == NULL || prefix[0] == '\0') {

@@ -62,11 +62,7 @@ jobs:
             -v "$PWD/artifact:/artifact:ro" \
             termux/termux-docker-pacman sh <<'TERMUX_SCRIPT'
           set -eu
-
-          cat >> "$PREFIX/etc/pacman.conf" <<'PACMAN_CONF'
-          [gpkg]
-          Server = https://service.termux-pacman.dev/gpkg/$arch
-          PACMAN_CONF
+          export CI=true
 
           pacman -Syyu --noconfirm
           pacman -S --noconfirm ca-certificates glibc glibc-runner
