@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 image="${TERMUX_IMAGE:-termux/termux-docker-pacman}"
 workspace="${GITHUB_WORKSPACE:-$PWD}"
-packages=("$@")
+packages=(termux-exec "$@")
 package_file="$(mktemp)"
 sync_file="$(mktemp)"
 task_script="$(mktemp)"
@@ -51,6 +51,11 @@ docker run --rm -i \
             TERMUX_PACKAGES="$(tr "\n" " " < /tmp/termux-packages)"
             # shellcheck disable=SC2086
             pacman -S --noconfirm --needed $TERMUX_PACKAGES
+        fi
+
+        termux_exec_preload="${PREFIX:-/data/data/com.termux/files/usr}/lib/libtermux-exec-ld-preload.so"
+        if [ -r "$termux_exec_preload" ]; then
+            export LD_PRELOAD="$termux_exec_preload"
         fi
 
         workdir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/ci-workspace"

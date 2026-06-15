@@ -37,11 +37,19 @@ cleanup() {
   [[ -d "$EXTRACT_DIR" ]] && rm -rf "$EXTRACT_DIR"
   if [[ "${INSTALL_SUCCESS:-0}" -ne 1 ]]; then
     [[ -f "$TMP" ]] && rm -f "$TMP"
-    [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]] && mv -f "$AGY_BAK" "$INSTALL_BIN_DIR/agy" || true
-    [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]] && mv -f "$AGY_VA39_BAK" "$INSTALL_BIN_DIR/agy.va39" || true
+    if [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]]; then
+      mv -f "$AGY_BAK" "$INSTALL_BIN_DIR/agy" || true
+    fi
+    if [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]]; then
+      mv -f "$AGY_VA39_BAK" "$INSTALL_BIN_DIR/agy.va39" || true
+    fi
   else
-    [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]] && rm -f "$AGY_BAK" || true
-    [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]] && rm -f "$AGY_VA39_BAK" || true
+    if [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]]; then
+      rm -f "$AGY_BAK" || true
+    fi
+    if [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]]; then
+      rm -f "$AGY_VA39_BAK" || true
+    fi
   fi
 }
 
