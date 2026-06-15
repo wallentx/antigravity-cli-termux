@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 REPO="${AGY_REPO:-wallentx/antigravity-cli-termux}"
-URL="https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz"
+URL="${AGY_INSTALL_URL:-https://github.com/$REPO/releases/latest/download/antigravity-termux-standalone.tar.gz}"
 
 # ── Environment Detection ─────────────────────────────────────────────────────
 if [[ -z "${TERMUX_VERSION:-}" || -z "${PREFIX:-}" ]]; then
@@ -314,4 +314,11 @@ info "Launching Antigravity CLI..."
 export PATH="$INSTALL_BIN_DIR:$PATH"
 INSTALL_SUCCESS=1
 cleanup
+trap - EXIT
+
+if [[ "${AGY_INSTALL_SKIP_LAUNCH:-0}" == "1" ]]; then
+  ok "Launch skipped by AGY_INSTALL_SKIP_LAUNCH"
+  exit 0
+fi
+
 exec "$INSTALL_BIN_DIR/agy"

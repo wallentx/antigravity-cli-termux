@@ -2,8 +2,6 @@ name: Actionlint
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -18,11 +16,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Decide Whether To Run
+        id: changed
+        run: .github/scripts/ci-should-run.py actionlint
+
+      - name: Skip Actionlint
+        if: steps.changed.outputs.should_run != 'true'
+        run: echo "${{ steps.changed.outputs.reason }}"
 
       - name: Run actionlint
+        if: steps.changed.outputs.should_run == 'true'
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color

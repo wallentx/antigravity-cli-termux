@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Prepare standalone archive
+        id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
@@ -36,10 +37,14 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             echo "Downloading PR build artifact from workflow run ${SOURCE_RUN_ID}..."
-            gh run download "$SOURCE_RUN_ID" \
+            if ! gh run download "$SOURCE_RUN_ID" \
               --repo "$GITHUB_REPOSITORY" \
               --name antigravity-termux-standalone-preview \
-              --dir artifact
+              --dir artifact; then
+              echo "No standalone preview artifact found. The PR build likely skipped packaging for this change set."
+              echo "skip_smoke=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             release_tag="$RELEASE_VERSION"
             case "$release_tag" in
@@ -55,8 +60,10 @@ jobs:
 
           test -f artifact/antigravity-termux-standalone.tar.gz
           tar -tzf artifact/antigravity-termux-standalone.tar.gz
+          echo "skip_smoke=false" >> "$GITHUB_OUTPUT"
 
       - name: Run termux-docker-pacman
+        if: steps.prepare.outputs.skip_smoke != 'true'
         run: |
           docker run --rm -i \
             -v "$PWD/artifact:/artifact:ro" \

@@ -129,8 +129,7 @@ static int is_native_termux(void) {
     char bin_path[PATH_MAX];
     int written = 0;
 
-    if ((termux_version == NULL || termux_version[0] == '\0') &&
-        (ci == NULL || ci[0] == '\0')) {
+    if ((termux_version == NULL || termux_version[0] == '\0') && (ci == NULL || ci[0] == '\0')) {
         return 0;
     }
     if (prefix == NULL || prefix[0] == '\0') {
