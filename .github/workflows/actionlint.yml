@@ -38,7 +38,9 @@ jobs:
 
       - name: Skip Actionlint
         if: steps.changed.outputs.should_run != 'true'
-        run: echo "${{ steps.changed.outputs.reason }}"
+        env:
+          SKIP_REASON: ${{ steps.changed.outputs.reason }}
+        run: echo "$SKIP_REASON"
 
       - name: Run actionlint
         if: steps.changed.outputs.should_run == 'true'

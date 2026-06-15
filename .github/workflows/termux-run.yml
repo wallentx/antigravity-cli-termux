@@ -67,9 +67,9 @@ jobs:
         run: |
           docker run --rm -i \
             -v "$PWD/artifact:/artifact:ro" \
-            termux/termux-docker-pacman sh <<'TERMUX_SCRIPT'
-          set -eu
-          export CI=true
+            termux/termux-docker-pacman bash <<'TERMUX_SCRIPT'
+          set -Eeuo pipefail
+          export TERMUX_VERSION="${TERMUX_VERSION:-docker}"
 
           pacman -Syyu --noconfirm
           pacman -S --noconfirm ca-certificates glibc glibc-runner

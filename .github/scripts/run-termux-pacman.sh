@@ -11,10 +11,10 @@ task_script="$(mktemp)"
 output_dir="$(mktemp -d)"
 
 cleanup() {
-    rm -f "$package_file"
-    rm -f "$sync_file"
-    rm -f "$task_script"
-    rm -rf "$output_dir" 2>/dev/null || true
+    rm -f "${package_file:-}"
+    rm -f "${sync_file:-}"
+    rm -f "${task_script:-}"
+    rm -rf "${output_dir:-}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -26,8 +26,8 @@ chmod 0644 "$package_file"
 
 : > "$sync_file"
 if [[ -n "${TERMUX_SYNC_BACK:-}" ]]; then
-    # shellcheck disable=SC2086
-    printf '%s\n' $TERMUX_SYNC_BACK > "$sync_file"
+    read -ra sync_paths <<< "$TERMUX_SYNC_BACK"
+    printf '%s\n' "${sync_paths[@]}" > "$sync_file"
 fi
 chmod 0644 "$sync_file"
 
@@ -42,9 +42,9 @@ docker run --rm -i \
     -v "$sync_file:/tmp/termux-sync-back:ro" \
     -v "$task_script:/tmp/termux-task.sh:ro" \
     "$image" \
-    sh -lc '
-        set -eu
-        export CI=true
+    bash -lc '
+        set -Eeuo pipefail
+        export TERMUX_VERSION="${TERMUX_VERSION:-docker}"
 
         pacman -Syu --noconfirm
         if [ -s /tmp/termux-packages ]; then
