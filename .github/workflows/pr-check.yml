@@ -5,9 +5,7 @@ on:
     branches:
       - dev
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: read-all
 
 jobs:
   c-format-and-tidy:

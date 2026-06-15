@@ -3,8 +3,7 @@ name: Actionlint
 on:
   pull_request:
 
-permissions:
-  contents: read
+permissions: read-all
 
 concurrency:
   group: actionlint-${{ github.event.pull_request.number }}
