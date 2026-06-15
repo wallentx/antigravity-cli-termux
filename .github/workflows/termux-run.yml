@@ -1,11 +1,6 @@
 name: Termux Run
 
 on:
-  workflow_run:
-    workflows:
-      - Pull Request Validation
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       release_version:
@@ -14,56 +9,35 @@ on:
         type: string
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
   run-termux:
     name: Run Termux Docker (ARM)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Prepare standalone archive
-        id: prepare
         env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-          RELEASE_VERSION: ${{ inputs.release_version || '' }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
 
           mkdir -p artifact
+          release_tag="$RELEASE_VERSION"
+          case "$release_tag" in
+            v*) ;;
+            *) release_tag="v${release_tag}" ;;
+          esac
 
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "Downloading PR build artifact from workflow run ${SOURCE_RUN_ID}..."
-            if ! gh run download "$SOURCE_RUN_ID" \
-              --repo "$GITHUB_REPOSITORY" \
-              --name antigravity-termux-standalone-preview \
-              --dir artifact; then
-              echo "No standalone preview artifact found. The PR build likely skipped packaging for this change set."
-              echo "skip_smoke=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          else
-            release_tag="$RELEASE_VERSION"
-            case "$release_tag" in
-              v*) ;;
-              *) release_tag="v${release_tag}" ;;
-            esac
-
-            echo "Downloading release artifact for ${release_tag}..."
-            curl -fsSL \
-              -o artifact/antigravity-termux-standalone.tar.gz \
-              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/antigravity-termux-standalone.tar.gz"
-          fi
+          echo "Downloading release artifact for ${release_tag}..."
+          curl -fsSL \
+            -o artifact/antigravity-termux-standalone.tar.gz \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/antigravity-termux-standalone.tar.gz"
 
           test -f artifact/antigravity-termux-standalone.tar.gz
           tar -tzf artifact/antigravity-termux-standalone.tar.gz
-          echo "skip_smoke=false" >> "$GITHUB_OUTPUT"
 
       - name: Run termux-docker-pacman
-        if: steps.prepare.outputs.skip_smoke != 'true'
         run: |
           docker run --rm -i \
             -v "$PWD/artifact:/artifact:ro" \

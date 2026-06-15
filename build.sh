@@ -241,3 +241,11 @@ fi
 
 chmod +x bin/agy
 ok "Native Termux bootstrapper compiled successfully."
+
+if [[ -n "${TERMUX_VERSION:-}" ]]; then
+  info "Validating built Termux binary with --help..."
+  if ! bin/agy --help >/dev/null; then
+    die "Built Termux binary failed to execute with --help."
+  fi
+  ok "Built Termux binary executed successfully."
+fi

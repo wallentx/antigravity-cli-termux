@@ -208,7 +208,7 @@ jobs:
         if: steps.changed.outputs.should_run == 'true'
         run: |
           TERMUX_SYNC_BACK=antigravity-termux-standalone.tar.gz \
-            .github/scripts/run-termux-pacman.sh ca-certificates curl jq tar python clang <<'TERMUX_SCRIPT'
+            .github/scripts/run-termux-pacman.sh ca-certificates curl jq tar python clang glibc glibc-runner <<'TERMUX_SCRIPT'
           set -Eeuo pipefail
 
           echo "Running build.sh builder integration test in Termux..."
