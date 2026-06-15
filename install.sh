@@ -91,6 +91,14 @@ die() {
 }
 divider() { printf '%b\n' "${DIM}────────────────────────────────────────${RESET}"; }
 
+terminal_cols() {
+  if [[ -r /dev/tty ]]; then
+    tput cols </dev/tty 2>/dev/null || echo 60
+  else
+    tput cols 2>/dev/null || echo 60
+  fi
+}
+
 spinner() {
   local pid=$1
   local msg=$2
@@ -131,7 +139,7 @@ download_with_progress() {
   fi
 
   local cols
-  cols=$(tput cols </dev/tty 2>/dev/null || echo 60)
+  cols=$(terminal_cols)
 
   local w=$(( cols - 38 ))
   (( w > 60 )) && w=60
@@ -190,7 +198,7 @@ TMP_LOGO=$(mktemp 2>/dev/null || echo "${HOME}/.local/.agy-logo.ans")
 
 if { curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/${REPO}/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null || curl -fLs -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Brajesh2022/antigravity-cli-termux/dev/logo.ans" > "$TMP_LOGO" 2>/dev/null; } && [[ -s "$TMP_LOGO" ]]; then
 
-  COLS=$(tput cols </dev/tty 2>/dev/null || echo 60)
+  COLS=$(terminal_cols)
 
   awk -v cols="$COLS" -v arch="$(uname -m)" -v bold="${BOLD}${CYAN}" -v dim="${DIM}" -v grn="${GREEN}" -v rst="${RESET}" '
   {
@@ -300,7 +308,7 @@ divider
 info "Installed binaries to: ${BOLD}${INSTALL_BIN_DIR}${RESET}"
 info "Release archive kept at: ${BOLD}${TMP}${RESET}"
 info "Optional verification:"
-info "${BOLD}cd $(dirname "$TMP") && gh attestation verify antigravity-termux-standalone.tar.gz --owner wallentx${RESET}"
+info "${BOLD}cd $(dirname "$TMP") && gh attestation verify antigravity-termux-standalone.tar.gz -R wallentx/antigravity-cli-termux${RESET}"
 printf '\n'
 
 case ":$PATH:" in
