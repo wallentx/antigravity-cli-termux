@@ -301,23 +301,47 @@ static const char *unpack_mmap_fixer(void) {
     }
 
     struct stat st;
-    if (stat(unpacked_path, &st) == 0 && st.st_size == (off_t)mmap_va39_fix_so_len) {
-        return unpacked_path;
+    if (stat(unpacked_path, &st) == 0) {
+        if (S_ISREG(st.st_mode) && st.st_uid == getuid() && st.st_size == (off_t)mmap_va39_fix_so_len) {
+            return unpacked_path;
+        }
     }
 
-    FILE *fp = fopen(unpacked_path, "wb");
-    if (!fp) {
+    char temp_template[PATH_MAX];
+    int temp_written = snprintf(temp_template, sizeof(temp_template), "%s/libmmap_va39_fix.tmp.XXXXXX", tmp);
+    if (temp_written < 0 || temp_written >= (int)sizeof(temp_template)) {
         return NULL;
     }
 
-    size_t written_bytes = fwrite(mmap_va39_fix_so, 1, mmap_va39_fix_so_len, fp);
-
-    if (fclose(fp) != 0 || written_bytes != mmap_va39_fix_so_len) {
-        unlink(unpacked_path);
+    int fd = mkstemp(temp_template);
+    if (fd < 0) {
         return NULL;
     }
 
-    if (chmod(unpacked_path, 0755) != 0) {
+    size_t total_written = 0;
+    while (total_written < mmap_va39_fix_so_len) {
+        ssize_t written_bytes = write(fd, mmap_va39_fix_so + total_written, mmap_va39_fix_so_len - total_written);
+        if (written_bytes < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            close(fd);
+            unlink(temp_template);
+            return NULL;
+        }
+        total_written += (size_t)written_bytes;
+    }
+
+    if (fchmod(fd, 0755) != 0) {
+        close(fd);
+        unlink(temp_template);
+        return NULL;
+    }
+
+    close(fd);
+
+    if (rename(temp_template, unpacked_path) != 0) {
+        unlink(temp_template);
         return NULL;
     }
 

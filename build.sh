@@ -132,7 +132,7 @@ if [[ "$SKIP_BOOTSTRAPPER" != "1" ]]; then
   info "Selected C compiler: $local_cc"
 
   # Additional compiler flags for custom NDK/toolchains (e.g. symlinked host compilers)
-  if [[ "$USE_NDK" == "1" && -n "${ANDROID_NDK_HOME:-}" ]]; then
+  if [[ "$USE_NDK" == "1" && -n "${ANDROID_NDK_HOME:-}" && "$local_cc" == *clang* ]]; then
     ndk_resource_dir=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 2 -maxdepth 5 -path "*/lib/clang/*" -type d -print -quit 2>/dev/null)
     if [[ -n "$ndk_resource_dir" ]]; then
       extra_cc_flags+=("--rtlib=compiler-rt" "-unwindlib=libunwind" "-resource-dir" "$ndk_resource_dir")
