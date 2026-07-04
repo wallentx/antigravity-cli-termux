@@ -3,6 +3,11 @@
 # Fetches/compiles the C bootstrapper and applies VA39 memory patches.
 set -Eeuo pipefail
 
+# Clean SSL_CERT_FILE if it points to a non-existent path (e.g. inherited Termux path in Ubuntu chroot)
+if [[ -n "${SSL_CERT_FILE:-}" && ! -f "$SSL_CERT_FILE" ]]; then
+  unset SSL_CERT_FILE
+fi
+
 # Enforce execution from the script's directory root
 cd "$(dirname "$0")"
 
@@ -40,10 +45,12 @@ Arguments:
 Environment:
   AGY_VERSION                      Version to embed when building from a local binary.
                                    Required if that binary cannot run on this host.
+  SKIP_BOOTSTRAPPER                If set to 1, skips compiling the C bootstrapper and
+                                   only generates the patched bin/agy.va39 binary.
 
 Requirements:
   - curl, jq, tar, python3
-  - native aarch64 Termux clang, or \$ANDROID_NDK_HOME with an aarch64 Android clang
+  - native aarch64 Termux clang, or \$ANDROID_NDK_HOME with an aarch64 Android clang (unless SKIP_BOOTSTRAPPER=1)
 EOF
 }
 
@@ -78,7 +85,8 @@ check_prereqs() {
 
 # Compiler detection
 detect_compiler() {
-  if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then
+  USE_NDK="${USE_NDK:-1}"
+  if [[ "$USE_NDK" == "1" && -n "${ANDROID_NDK_HOME:-}" ]]; then
     local ndk_clang
     ndk_clang=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -name "aarch64-linux-android*-clang" -print -quit 2>/dev/null)
     if [[ -n "$ndk_clang" && -x "$ndk_clang" ]]; then
@@ -97,18 +105,40 @@ detect_compiler() {
     return 0
   fi
 
+  if command -v clang &>/dev/null; then
+    echo "clang"
+    return 0
+  elif command -v gcc &>/dev/null; then
+    echo "gcc"
+    return 0
+  fi
+
   return 1
 }
 
 # Main builder logic
 check_prereqs
 
-# Detect C compiler
+SKIP_BOOTSTRAPPER="${SKIP_BOOTSTRAPPER:-0}"
+USE_NDK="${USE_NDK:-1}"
+
+# Detect C compiler and setup flags
 local_cc=""
-if ! local_cc=$(detect_compiler); then
-  die "No supported aarch64 C compiler found. Install Termux clang on aarch64, or set ANDROID_NDK_HOME with an aarch64 Android clang."
+extra_cc_flags=()
+if [[ "$SKIP_BOOTSTRAPPER" != "1" ]]; then
+  if ! local_cc=$(detect_compiler); then
+    die "No supported aarch64 C compiler found. Install clang/gcc on the host, Termux clang on aarch64, or set ANDROID_NDK_HOME with an aarch64 Android clang."
+  fi
+  info "Selected C compiler: $local_cc"
+
+  # Additional compiler flags for custom NDK/toolchains (e.g. symlinked host compilers)
+  if [[ "$USE_NDK" == "1" && -n "${ANDROID_NDK_HOME:-}" ]]; then
+    ndk_resource_dir=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 2 -maxdepth 5 -path "*/lib/clang/*" -type d -print -quit 2>/dev/null)
+    if [[ -n "$ndk_resource_dir" ]]; then
+      extra_cc_flags+=("--rtlib=compiler-rt" "-unwindlib=libunwind" "-resource-dir" "$ndk_resource_dir")
+    fi
+  fi
 fi
-info "Selected C compiler: $local_cc"
 
 # Create directories
 mkdir -p staging bin
@@ -230,19 +260,23 @@ print(f"Patched parameters: ubfx={ubfx_count}, lsl={lsl_count}, mask={mask_count
 PY
 ok "Patched binary generated: bin/agy.va39"
 
-# Compile the native Termux C bootstrapper.
-info "Compiling native Termux C bootstrapper..."
-if ! "$local_cc" -O2 -DAGY_TERMUX_VERSION="\"$latest_version\"" -o bin/agy lib/agy_helper.c; then
-  die "Compilation of lib/agy_helper.c failed."
-fi
-
-chmod +x bin/agy
-ok "Native Termux bootstrapper compiled successfully."
-
-if [[ -n "${TERMUX_VERSION:-}" ]]; then
-  info "Validating built Termux binary with --help..."
-  if ! bin/agy --help >/dev/null; then
-    die "Built Termux binary failed to execute with --help."
+if [[ "$SKIP_BOOTSTRAPPER" != "1" ]]; then
+  # Compile the native Termux C bootstrapper.
+  info "Compiling native Termux C bootstrapper..."
+  if ! "$local_cc" "${extra_cc_flags[@]}" -O2 -DAGY_TERMUX_VERSION="\"$latest_version\"" -o bin/agy lib/agy_helper.c; then
+    die "Compilation of lib/agy_helper.c failed."
   fi
-  ok "Built Termux binary executed successfully."
+
+  chmod +x bin/agy
+  ok "Native Termux bootstrapper compiled successfully."
+
+  if [[ -n "${TERMUX_VERSION:-}" ]]; then
+    info "Validating built Termux binary with --help..."
+    if ! bin/agy --help >/dev/null; then
+      die "Built Termux binary failed to execute with --help."
+    fi
+    ok "Built Termux binary executed successfully."
+  fi
+else
+  info "Skipping native Termux C bootstrapper compilation (SKIP_BOOTSTRAPPER=1)."
 fi

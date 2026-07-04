@@ -7,7 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/auxv.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include "mmap_va39_fix_bytes.h"
 
 #ifndef HWCAP_ATOMICS
 #define HWCAP_ATOMICS (1 << 8)
@@ -239,26 +242,25 @@ static int is_native_termux(void) {
     return 1;
 }
 
-static void print_non_termux_message(void) {
-    (void)fprintf(stderr, "[agy-termux] This standalone port is only for native Termux.\n"
-                          "[agy-termux] PRoot environments can use Google's official "
-                          "Antigravity CLI binary directly.\n"
-                          "[agy-termux] Install it with:\n"
-                          "  curl -fsSL https://antigravity.google/cli/install.sh | bash\n");
-}
-
-static int require_resolver_config(const char *prefix) {
+static int require_resolver_config(const char *prefix, int is_termux) {
     char resolv_path[PATH_MAX];
-    int written = snprintf(resolv_path, sizeof(resolv_path), "%s/etc/resolv.conf", prefix);
+    int written;
+    if (is_termux) {
+        written = snprintf(resolv_path, sizeof(resolv_path), "%s/etc/resolv.conf", prefix);
+    } else {
+        written = snprintf(resolv_path, sizeof(resolv_path), "/etc/resolv.conf");
+    }
     if (written < 0 || written >= (int)sizeof(resolv_path)) {
         return 0;
     }
 
     if (access(resolv_path, R_OK) != 0) {
-        (void)fprintf(stderr, "[agy-termux] Missing resolver configuration: %s\n", resolv_path);
-        (void)fprintf(stderr, "[agy-termux] Install it with: pkg install resolv-conf\n");
+        (void)fprintf(stderr, "[agy-compat] Missing resolver configuration: %s\n", resolv_path);
+        if (is_termux) {
+            (void)fprintf(stderr, "[agy-termux] Install it with: pkg install resolv-conf\n");
+        }
         (void)fprintf(stderr,
-                      "[agy-termux] Without this file, login and OAuth network requests may "
+                      "[agy-compat] Without this file, login and OAuth network requests may "
                       "fail.\n");
         return 0;
     }
@@ -286,9 +288,45 @@ static int resolve_qemu_for_cpu(const char *prefix, char *qemu_path, size_t qemu
     return 0;
 }
 
+static const char *unpack_mmap_fixer(void) {
+    static char unpacked_path[PATH_MAX];
+    const char *tmp = getenv("TMPDIR");
+    if (!tmp || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+
+    int written = snprintf(unpacked_path, sizeof(unpacked_path), "%s/libmmap_va39_fix.so", tmp);
+    if (written < 0 || written >= (int)sizeof(unpacked_path)) {
+        return NULL;
+    }
+
+    struct stat st;
+    if (stat(unpacked_path, &st) == 0 && st.st_size == (off_t)mmap_va39_fix_so_len) {
+        return unpacked_path;
+    }
+
+    FILE *fp = fopen(unpacked_path, "wb");
+    if (!fp) {
+        return NULL;
+    }
+
+    size_t written_bytes = fwrite(mmap_va39_fix_so, 1, mmap_va39_fix_so_len, fp);
+
+    if (fclose(fp) != 0 || written_bytes != mmap_va39_fix_so_len) {
+        unlink(unpacked_path);
+        return NULL;
+    }
+
+    if (chmod(unpacked_path, 0755) != 0) {
+        return NULL;
+    }
+
+    return unpacked_path;
+}
+
 int main(int argc, char **argv) {
     char exec_path[PATH_MAX];
-    char lib_path[PATH_MAX + 16];
+    char lib_path[PATH_MAX * 3];
     char patched_bin[PATH_MAX];
     char dynamic_loader[PATH_MAX];
     char cert_path[PATH_MAX];
@@ -300,50 +338,68 @@ int main(int argc, char **argv) {
     const char *qemu = NULL;
     const char *exec_target = NULL;
     const char *exec_error = NULL;
+    const char *fixer_path = NULL;
     char **new_argv = NULL;
     int arg_idx = 0;
     int written = 0;
     ssize_t read_len = 0;
+    int is_termux = is_native_termux();
 
-    if (!is_native_termux()) {
-        print_non_termux_message();
-        return 1;
-    }
+    if (is_termux) {
+        if (!resolve_qemu_for_cpu(prefix, qemu_path, sizeof(qemu_path), &qemu)) {
+            return 1;
+        }
+        written = snprintf(prefix_path, sizeof(prefix_path), "%s", prefix);
+        if (written < 0 || written >= (int)sizeof(prefix_path)) {
+            return 1;
+        }
+        written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
+                           prefix_path);
+        if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
+            return 1;
+        }
+        loader = dynamic_loader;
+        exec_target = loader;
+        exec_error = "[agy-termux] execv failed";
 
-    if (!resolve_qemu_for_cpu(prefix, qemu_path, sizeof(qemu_path), &qemu)) {
-        return 1;
-    }
-    written = snprintf(prefix_path, sizeof(prefix_path), "%s", prefix);
-    if (written < 0 || written >= (int)sizeof(prefix_path)) {
-        return 1;
-    }
-    written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
-                       prefix_path);
-    if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
-        return 1;
-    }
-    loader = dynamic_loader;
-    exec_target = loader;
-    exec_error = "[agy-termux] execv failed";
-
-    if (access(loader, F_OK) != 0) {
-        (void)fprintf(stderr, "[agy-termux] Missing Termux glibc loader: %s\n", loader);
-        (void)fprintf(stderr,
-                      "[agy-termux] You may need to install the glibc-repo and glibc packages.\n");
-        return 1;
+        if (access(loader, F_OK) != 0) {
+            (void)fprintf(stderr, "[agy-termux] Missing Termux glibc loader: %s\n", loader);
+            (void)fprintf(stderr,
+                          "[agy-termux] You may need to install the glibc-repo and glibc packages.\n");
+            return 1;
+        }
+    } else {
+        fixer_path = unpack_mmap_fixer();
+        if (!fixer_path) {
+            (void)fprintf(stderr, "[ERR] Failed to extract PRoot/Chroot compatibility layer.\n");
+            return 1;
+        }
+        loader = "/lib/ld-linux-aarch64.so.1";
+        exec_target = loader;
+        exec_error = "[agy-compat] execv failed";
+        if (access(loader, F_OK) != 0) {
+            (void)fprintf(stderr, "[agy-compat] Missing glibc loader: %s\n", loader);
+            return 1;
+        }
     }
 
     // Clear conflicting Android Bionic preloads and search paths.
-    unsetenv("LD_PRELOAD");
+    if (is_termux) {
+        unsetenv("LD_PRELOAD");
+    }
     unsetenv("LD_LIBRARY_PATH");
 
     // Set dynamic Go resolver and SSL configuration.
     setenv("GODEBUG", "netdns=cgo", 1);
-    written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix_path);
-    if (written < 0 || written >= (int)sizeof(cert_path)) {
-        return 1;
+    if (is_termux) {
+        written = snprintf(cert_path, sizeof(cert_path), "%s/etc/tls/cert.pem", prefix_path);
+        if (written < 0 || written >= (int)sizeof(cert_path)) {
+            return 1;
+        }
+        setenv("SSL_CERT_FILE", cert_path, 1);
+    } else if (access("/etc/ssl/certs/ca-certificates.crt", F_OK) == 0) {
+        setenv("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt", 1);
     }
-    setenv("SSL_CERT_FILE", cert_path, 1);
 
     read_len = readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
     if (read_len < 0 || read_len >= (ssize_t)sizeof(exec_path)) {
@@ -356,31 +412,35 @@ int main(int argc, char **argv) {
         if (update_command_requests_help(argc, argv)) {
             return handle_update_command(dir, argc, argv);
         }
-        if (!require_resolver_config(prefix_path)) {
+        if (!require_resolver_config(prefix_path, is_termux)) {
             return 1;
         }
         return handle_update_command(dir, argc, argv);
     }
 
-    if (!require_resolver_config(prefix_path)) {
+    if (!require_resolver_config(prefix_path, is_termux)) {
         return 1;
     }
 
-    // Use only the Termux glibc runtime libraries.
-    written = snprintf(lib_path, sizeof(lib_path), "%s/glibc/lib", prefix_path);
+    // Construct relocatable library search path.
+    if (is_termux) {
+        written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:%s/glibc/lib", dir, prefix_path);
+    } else {
+        written = snprintf(lib_path, sizeof(lib_path), "%s/../lib:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu", dir);
+    }
     if (written < 0 || written >= (int)sizeof(lib_path)) {
         return 1;
     }
 
-    // Construct path to the patched binary
+    // Construct path to the patched binary.
     written = snprintf(patched_bin, sizeof(patched_bin), "%s/agy.va39", dir);
     if (written < 0 || written >= (int)sizeof(patched_bin)) {
         return 1;
     }
 
-    // We allocate enough space for: qemu + loader + "--library-path" + lib_path
+    // We allocate enough space for: qemu + loader + "--preload" + fixer_path + "--library-path" + lib_path
     // + patched_bin + user args + NULL
-    int new_argc = argc + 6;
+    int new_argc = argc + 10;
     new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
     if (!new_argv) {
         return 1;
@@ -393,6 +453,10 @@ int main(int argc, char **argv) {
         exec_error = "[agy-termux] execv (qemu) failed";
     }
     new_argv[arg_idx++] = (char *)loader;
+    if (fixer_path) {
+        new_argv[arg_idx++] = "--preload";
+        new_argv[arg_idx++] = (char *)fixer_path;
+    }
     new_argv[arg_idx++] = "--library-path";
     new_argv[arg_idx++] = lib_path;
     new_argv[arg_idx++] = patched_bin;
