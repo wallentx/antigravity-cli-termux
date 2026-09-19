@@ -4,6 +4,22 @@
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
 
+## 1.2.7
+
+- Added inline Kitty graphics rendering for LaTeX math equations (`$$...$$` and fenced `math`, `latex`, and `tex` blocks) and Mermaid flowcharts and sequence diagrams in the artifact detail viewer, with Unicode ASCII fallback, Left/Right arrow horizontal panning for wide diagrams, and `m` to cycle between Image, ASCII, and Raw views
+- Improved the `ask_question` interactive prompt with Left/Right arrow navigation between questions, inline previews of confirmed write-in answers, check marks on answered options, and single-step submission on the final question
+- Improved the CLI startup banner for enterprise accounts to display the active Google Cloud Project ID beneath the signed-in account and plan tier
+- Improved model API retry responsiveness by capping per-attempt retry backoff at 30 seconds instead of waiting up to 4 minutes between attempts
+- Improved customization token budgeting by giving user and workspace rules a dedicated 20,000-token budget (cutting oversized rules on newline boundaries and listing over-budget rules by path and description) so large rule sets no longer evict skills, workflows, subagents, or MCP tools
+- Improved the `/usage` panel by removing the duplicate remaining-quota percentage line beneath each progress bar
+- Improved the default agent and subagent toolset by retiring the legacy `find_by_name`, `grep_search`, and `list_dir` tools from the default baseline while keeping them available to custom agents that explicitly list them in `tools`
+- Fixed plugin skill slash commands being double-prefixed (`/<plugin>:<plugin>:<skill>`) when a skill's frontmatter name already includes the plugin prefix, or being shadowed when multiple plugins define skills with the same short name
+- Fixed plugin upgrades leaving old MCP server and sidecar processes running from deleted install directories, and pruned superseded plugin versions and staging directories from the marketplace cache on startup
+- Fixed disabled plugins disappearing from the `/plugin` list after enabled-only customization queries, and hardened plugin ID path validation on uninstall
+- Fixed terminal rendering and Kitty keyboard protocol stack handling on exit and screen clear by upgrading Bubble Tea to v2.0.9
+- Fixed headless (`-p` / `--prompt`) runs occasionally skipping the background-task waiting notice, logged background SDK tool progress to task log files, and reduced memory usage by cloning truncated command output previews
+- Fixed starting the CLI unpinning conversations or marking them unread in the desktop app
+
 ## 1.2.6
 
 - Added Remote Control (start a connection via `--remote-control` startup flag or `/remote-control` slash command) to create a session-scoped remote connection for following and controlling your active terminal session from another device. Typing `/remote-control off` or closing the session automatically tears down the tunnel and unregisters the device from the active Remote Control session list.
