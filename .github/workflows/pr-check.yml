@@ -121,6 +121,9 @@ jobs:
     with:
       packages: |
         clang
+        python
+        curl
+        tar
       exclude-paths: |
         .git
         ./.git
@@ -148,6 +151,9 @@ jobs:
         )
 
         clang "${strict_flags[@]}" -o "bin/agy-clang" lib/agy_helper.c
+
+        echo "Testing native, Aether, and QEMU launcher selection..."
+        python .github/scripts/launcher-test.py
 
         for source in lib/*.c; do
           [[ -e "$source" ]] || continue

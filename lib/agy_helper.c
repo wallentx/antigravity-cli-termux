@@ -640,11 +640,59 @@ static int resolve_qemu_for_cpu(const char *prefix, char *qemu_path, size_t qemu
     return 0;
 }
 
+struct payload_launch {
+    const char *runtime;
+    const char *lib_path;
+    const char *patched_bin;
+    const char *qemu;
+    int use_aether;
+};
+
+static int launch_payload(int argc, char **argv, const struct payload_launch *launch) {
+    const char *exec_target = launch->runtime;
+    const char *exec_error = "[agy-termux] execv failed";
+    // Allocate enough space for QEMU, loader, library path, payload, arguments, and NULL.
+    int new_argc = argc + 6;
+    char **new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
+    if (!new_argv) {
+        return 1;
+    }
+
+    int arg_idx = 0;
+    if (launch->qemu) {
+        new_argv[arg_idx++] = (char *)launch->qemu;
+        exec_target = launch->qemu;
+        exec_error = "[agy-termux] execv (qemu) failed";
+    }
+    new_argv[arg_idx++] = (char *)launch->runtime;
+    if (launch->use_aether) {
+        new_argv[arg_idx++] = "--";
+    } else {
+        new_argv[arg_idx++] = "--library-path";
+        new_argv[arg_idx++] = (char *)launch->lib_path;
+    }
+    new_argv[arg_idx++] = (char *)launch->patched_bin;
+
+    for (int i = 1; i < argc; i++) {
+        new_argv[arg_idx++] = argv[i];
+    }
+    new_argv[arg_idx] = NULL;
+
+    // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
+    if (execv(exec_target, new_argv) == -1) {
+        perror(exec_error);
+        free(new_argv);
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     char exec_path[PATH_MAX];
     char lib_path[PATH_MAX + 16];
     char patched_bin[PATH_MAX];
     char dynamic_loader[PATH_MAX];
+    char aether_runner[PATH_MAX];
     char cert_path[PATH_MAX];
     char prefix_path[PATH_MAX];
     char qemu_path[PATH_MAX];
@@ -653,10 +701,8 @@ int main(int argc, char **argv) {
     const char *dir = NULL;
     const char *qemu = NULL;
     const char *exec_target = NULL;
-    const char *exec_error = NULL;
-    char **new_argv = NULL;
-    int arg_idx = 0;
     int written = 0;
+    int use_aether = 0;
     ssize_t read_len = 0;
 
     if (!is_native_termux()) {
@@ -671,25 +717,31 @@ int main(int argc, char **argv) {
     if (written < 0 || written >= (int)sizeof(prefix_path)) {
         return 1;
     }
+    written = snprintf(aether_runner, sizeof(aether_runner), "%s/bin/aether-run", prefix_path);
+    // Keep the existing QEMU path on CPUs that cannot run the payload natively.
+    use_aether = qemu == NULL && !env_var_enabled("AGY_NO_AETHER") && written >= 0 &&
+                 written < (int)sizeof(aether_runner) && access(aether_runner, X_OK) == 0;
     written = snprintf(dynamic_loader, sizeof(dynamic_loader), "%s/glibc/lib/ld-linux-aarch64.so.1",
                        prefix_path);
     if (written < 0 || written >= (int)sizeof(dynamic_loader)) {
         return 1;
     }
     loader = dynamic_loader;
-    exec_target = loader;
-    exec_error = "[agy-termux] execv failed";
+    exec_target = use_aether ? aether_runner : loader;
 
-    if (access(loader, F_OK) != 0) {
+    if (!use_aether && access(loader, F_OK) != 0) {
         (void)fprintf(stderr, "[agy-termux] Missing Termux glibc loader: %s\n", loader);
         (void)fprintf(stderr,
                       "[agy-termux] You may need to install the glibc-repo and glibc packages.\n");
         return 1;
     }
 
-    // Clear conflicting Android Bionic preloads and search paths.
-    unsetenv("LD_PRELOAD");
-    unsetenv("LD_LIBRARY_PATH");
+    // Aether's Bionic wrapper needs the Termux execution shim. It replaces the
+    // preload and library path itself before entering glibc, including children.
+    if (!use_aether) {
+        unsetenv("LD_PRELOAD");
+        unsetenv("LD_LIBRARY_PATH");
+    }
 
     // Set dynamic Go resolver and SSL configuration.
     setenv("GODEBUG", "netdns=cgo", 1);
@@ -734,34 +786,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // We allocate enough space for: qemu + loader + "--library-path" + lib_path
-    // + patched_bin + user args + NULL
-    int new_argc = argc + 6;
-    new_argv = malloc((size_t)new_argc * sizeof(*new_argv));
-    if (!new_argv) {
-        return 1;
-    }
-
-    arg_idx = 0;
-    if (qemu) {
-        new_argv[arg_idx++] = (char *)qemu;
-        exec_target = qemu;
-        exec_error = "[agy-termux] execv (qemu) failed";
-    }
-    new_argv[arg_idx++] = (char *)loader;
-    new_argv[arg_idx++] = "--library-path";
-    new_argv[arg_idx++] = lib_path;
-    new_argv[arg_idx++] = patched_bin;
-
-    for (int i = 1; i < argc; i++) {
-        new_argv[arg_idx++] = argv[i];
-    }
-    new_argv[arg_idx] = NULL;
-
-    // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
-    if (execv(exec_target, new_argv) == -1) {
-        perror(exec_error);
-        free(new_argv);
-        return 1;
-    }
+    const struct payload_launch launch = {
+        .runtime = exec_target,
+        .lib_path = lib_path,
+        .patched_bin = patched_bin,
+        .qemu = qemu,
+        .use_aether = use_aether,
+    };
+    return launch_payload(argc, argv, &launch);
 }

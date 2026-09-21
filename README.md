@@ -38,8 +38,11 @@ A dedicated Python patching process is executed during the build to:
 Standard Termux runs under the Android Bionic libc environment, injecting specific preloads (`LD_PRELOAD=/data/.../libtermux-exec.so`) to intercept calls. However, because the patched binary is built under glibc, loading it directly causes immediate crashes (`invalid ELF header`) when the glibc dynamic linker processes Bionic preloads.
 To circumvent this, a relocatable C bootstrapper (`agy`) is compiled:
 * **Dynamic Resolution**: Resolves its own folder at runtime using `/proc/self/exe` via `readlink`, enabling the package to be extracted and executed in *any* directory without wrapper scripts.
-* **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) before executing the loader.
-* **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then passes execution cleanly to the glibc loader.
+* **Runtime Selection**: On LSE-capable CPUs, uses the executable `$PREFIX/bin/aether-run` entry point when installed by Termux Aether. This uses Aether's APK-installed loader instead of routing the package-managed glibc loader through Android's linker, which can abort with `Could not find a PHDR`. Otherwise, keeps the existing glibc/QEMU path.
+* **Environment Cleansing**: Unsets conflicting environment variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`) on the traditional loader path. Preserves them for Aether's Bionic wrapper, which handles the glibc transition and mixed Linux/Android child processes itself.
+* **Redirection**: Configures the native Termux CA bundle (`SSL_CERT_FILE`) and DNS routing (`GODEBUG=netdns=cgo`), then forwards arguments to the selected runtime and sibling `agy.va39` payload.
+
+Aether detection uses the installed absolute entry point, not a version string or a command found on `PATH`. Set `AGY_NO_AETHER=1` to force the traditional loader; the installer honors the same opt-out. Aether startup errors are returned without retrying the payload through another runtime. Resolver requirements, update interception, and startup update checks still apply. The installer accepts Aether's runtime instead of requiring the package-managed loader for native execution; optional Linux dependencies may still require packages under `$PREFIX/glibc`.
 
 #### 3. LSE (Large System Extensions) & QEMU Support
 The engine requires ARMv8.1-A Atomics (LSE) to run natively. On older ARMv8.0-A CPUs lacking LSE support, the binary will crash with an "Illegal Instruction".
