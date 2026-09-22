@@ -4,6 +4,20 @@
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
 
+## 1.2.8
+
+- Improved context compaction to spread its user-request budget across all captured prompts, so a long initial instruction is no longer truncated to a small fixed slice when the other prompts in the conversation are short
+- Improved context compaction to size summary and truncation budgets from the model's full context window instead of the compaction trigger threshold, so compacted summaries and background-task lists are no longer prematurely cut short
+- Fixed PDF and audio tool outputs and attachments failing with `unsupported mime type` errors on custom models configured in `settings.json`; custom models now accept PDFs by default and honor the `modelFeatures` media flags for images, video, PDF, and audio
+- Fixed pressing `Ctrl+G` to edit the prompt in a full-screen terminal editor such as `vim` hanging with `Vim: Warning: Output is not to a terminal`; external editors now run against a real terminal stdout
+- Fixed voice dictation sessions longer than 4 minutes failing with a deadline error and erasing the drafted transcription; recordings now automatically stop and finalize at 3 minutes 30 seconds
+- Fixed the startup banner displaying a Google Cloud Project ID for consumer (non-enterprise) sign-ins
+- Fixed a stack-overflow crash when loading or compacting conversations containing background-task, subagent-management, messaging, or scheduling steps
+- Fixed forked conversations inheriting step output data from steps after the fork point, which could collide with new steps produced in the fork
+- Fixed a background poller and timer leaking for every conversation session, slowly accumulating memory over long-running sessions
+- Fixed canceled conversation and workspace creation requests continuing to provision resources in the background; aborted requests now stop immediately
+- Fixed quitting the CLI taking around 5 extra seconds before the process exited; shutdown now cancels open streaming connections immediately instead of waiting for a forced timeout
+
 ## 1.2.7
 
 - Added inline Kitty graphics rendering for LaTeX math equations (`$$...$$` and fenced `math`, `latex`, and `tex` blocks) and Mermaid flowcharts and sequence diagrams in the artifact detail viewer, with Unicode ASCII fallback, Left/Right arrow horizontal panning for wide diagrams, and `m` to cycle between Image, ASCII, and Raw views
