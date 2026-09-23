@@ -4,6 +4,24 @@
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
 
+## 1.2.9
+
+- Added `@<subagent> <message>` prompt syntax to send a message directly to a subagent conversation, with autocomplete listing running and completed subagents
+- Added Vim numeric count multipliers so counts apply to operators, motions, and actions in Normal and Visual modes, including `3dw`, `2d3w`, `3dd`, `3x`, `3rX`, `3p`, `3u`, `[count]G`/`gg`/`$`, and counted text objects such as `2di(`
+- Improved `GEMINI_API_KEY` sessions to reduce behavior discrepancies with the non-API-key sign-in path
+- Improved the artifact viewer to show a Left/Right pan hint in the footer when a wide diagram overflows the window
+- Improved `/rewind` to show a relative timestamp for each step and to focus the most recent step when the panel opens
+- Improved command allow-listing suggestions to recognize `jj config` and `jj op` subcommands when offering to always allow a command
+- Fixed headless (`-p` / `--prompt`) runs leaving daemon background processes running after exit, which could hang scripts reading the CLI's output until end-of-file; daemon processes now terminate when the run ends
+- Fixed headless (`-p` / `--prompt`) runs cancelling still-running background tasks about 5 seconds after the agent went idle; runs now wait for background tasks until the `--print-timeout` deadline, up to a 30-minute cap
+- Fixed a conversation-history database corruption risk where checking the database file for write access could silently drop file locks held by concurrent CLI processes on the same file
+- Fixed context compaction failing when the tool configuration used for compaction checkpoints was rejected in certain scenarios
+- Fixed a backend crash when a streamed model response chunk arrived without its response envelope, which terminated the session with connection errors
+- Fixed markdown table column alignment when a table cell contains file links that wrap across lines
+- Fixed markdown file links to code symbols dropping their display text and rendering the raw path instead
+- Fixed incomplete enterprise sign-ins (for example closing the browser window before finishing license or project selection) leaving behind a stuck partial credential; such credentials are now cleared automatically so sign-in can be retried cleanly
+- Fixed the browser companion page title to read `Antigravity CLI` instead of `Antigravity Cli`
+
 ## 1.2.8
 
 - Improved context compaction to spread its user-request budget across all captured prompts, so a long initial instruction is no longer truncated to a small fixed slice when the other prompts in the conversation are short
