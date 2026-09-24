@@ -244,12 +244,6 @@ command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 command -v install >/dev/null 2>&1 || die "install is required"
 
-GLIBC_LOADER="${TERMUX_PREFIX}/glibc/lib/ld-linux-aarch64.so.1"
-if [[ ! -x "$GLIBC_LOADER" ]]; then
-  die "Missing Termux glibc loader: $GLIBC_LOADER
-You may need to install the glibc-repo and glibc packages, then rerun this installer."
-fi
-
 check_lse() {
   grep -q "atomics" /proc/cpuinfo
 }
@@ -257,6 +251,21 @@ check_lse() {
 check_qemu() {
   command -v qemu-aarch64 >/dev/null 2>&1
 }
+
+HAS_LSE=0
+if check_lse; then
+  HAS_LSE=1
+fi
+
+# Aether supplies its own loader for native execution. QEMU keeps the existing
+# package-managed loader path, even when aether-run is installed.
+GLIBC_LOADER="${TERMUX_PREFIX}/glibc/lib/ld-linux-aarch64.so.1"
+if [[ "$HAS_LSE" -eq 0 || "${AGY_NO_AETHER:-0}" =~ ^(1|true)$ || ! -x "$TERMUX_PREFIX/bin/aether-run" ]]; then
+  if [[ ! -x "$GLIBC_LOADER" ]]; then
+    die "Missing Termux glibc loader: $GLIBC_LOADER
+You may need to install the glibc-repo and glibc packages, then rerun this installer."
+  fi
+fi
 
 CA_BUNDLE="${TERMUX_PREFIX}/etc/tls/cert.pem"
 if [[ ! -s "$CA_BUNDLE" ]]; then
@@ -271,7 +280,7 @@ You may need to install the resolv-conf package, then rerun this installer:
   pkg install resolv-conf"
 fi
 
-if ! check_lse; then
+if [[ "$HAS_LSE" -eq 0 ]]; then
   if ! check_qemu; then
     die "This CPU does not support LSE atomics, and qemu-aarch64 was not found.
 You may need to install the qemu-user-aarch64 package, then rerun this installer."

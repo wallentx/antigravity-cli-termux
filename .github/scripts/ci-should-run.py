@@ -79,7 +79,12 @@ def c_static_path(path: str) -> bool:
 
 
 def termux_compile_path(path: str) -> bool:
-    return is_c_source(path) or is_pr_workflow(path) or is_termux_helper(path)
+    return (
+        is_c_source(path)
+        or is_pr_workflow(path)
+        or is_termux_helper(path)
+        or path in {".github/scripts/launcher-test.py", "install.sh"}
+    )
 
 
 def build_package_path(path: str) -> bool:
