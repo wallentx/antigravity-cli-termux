@@ -4,6 +4,30 @@
 
 The terminal-first surface to interact with Antigravity agents. Stay in your flow without context switching.
 
+## 1.3.3
+
+- Added a pinned prompt header in no flickering mode while you scroll back through a long conversation: the prompt that produced the response you're reading stays at the top of the transcript, and clicking it jumps back to that prompt.
+- Added support for MCP servers to mark a tool as always loaded by setting `_meta: {"antigravity/alwaysLoad": true}` on it in their `tools/list` response, so the agent gets that tool directly instead of discovering it on demand.
+- Added support for a root-level `agents.json` in plugins, so a plugin can declare its subagents the same way it declares skills and rules with `skills.json` and `rules.json`.
+- Changed the macOS terminal sandbox to block sandboxed commands from reading `~/Library/Application Support` by default, since desktop apps keep credentials and session tokens there; previously it was readable, and you can still allow it explicitly in your sandbox rules.
+- Improved error messages: a request that fails with an HTML error page, for example from a corporate proxy, now shows the page title instead of the raw HTML, other long non-JSON error bodies are cut off after 500 bytes, and reaching your individual quota is reported right away instead of being retried.
+- Improved search in the `/plugin` Installed tab: you can now type spaces in a search query, press `Enter` to finish searching, then use `Space` to toggle the selected plugin and `Enter` to expand its details; start typing again to resume the search.
+- Fixed an expired or revoked sign-in showing an unclear error mid-session; the agent now says `Authentication expired. Please log back in.`, and a token refresh that was already in flight no longer restores the expired credentials.
+- Fixed `/add-dir` claiming it added a path that doesn't exist or isn't a directory; it now reports `directory not found` or `not a directory`.
+- Fixed `/btw` side questions running your user and workspace hooks, which could make hooks such as stop hooks loop or add extra steps to a quick question.
+- Fixed Jujutsu (`jj`) commands run by the agent, such as `jj diff` or `jj log`, hanging in an interactive pager; agent commands now set `JJ_PAGER=cat` alongside `PAGER` and `GIT_PAGER`.
+- Fixed subagents started with a `branch` or `share` workspace in a multi-repository workspace silently working in your real checkout; each repository now gets its own isolated copy.
+- Fixed a stopped subagent staying in the active agents list while it still had an approval pending; stopping it now clears its pending approvals right away.
+- Fixed `--remote-control` failing when you sign in with Application Default Credentials (`AGY_ADC_AUTH`); Remote Control doesn't support ADC yet, so the flag now exits with a clear error and the `/remote-control` command is hidden.
+- Fixed custom `alt` keybindings such as `alt+s` not working with the macOS Option key in terminals that don't treat Option as Meta, such as Terminal.app and VS Code-based terminals.
+- Fixed `/keybindings` silently doing nothing when the configured editor can't be found; it now shows an error.
+- Fixed `agy plugin validate` and plugin listings missing skills declared through the `skills` field in `plugin.json` or ignoring `skills.json` exclusions, so they now match the skills that actually load, and fixed a race that could drop results when importing plugins.
+- Fixed sandboxed commands failing with `Access is denied.` on Windows when PowerShell 7 was installed from the Microsoft Store; the agent now falls back to Windows PowerShell in that case.
+- Fixed `/diff` showing the error from `git diff HEAD` instead of the real cause, such as a corrupt index, when the fallback `git diff` also fails.
+- Fixed file links in agent responses whose line anchor was percent-encoded, such as `file.go%23L795`; the label now shows the line number and the link opens the correct line.
+- Fixed separate links to the same URL highlighting together when you hover over one of them in terminals that support clickable links.
+- Fixed counts in tool steps and the `/codesearch` panel, which now read "Found 1 result", "1 match", "1 file", and "Wrote 1 line" instead of "1 results", and the file-creation step reporting one line too many.
+
 ## 1.3.2
 
 - Added `/plugin`, an interactive manager for the official Antigravity plugin marketplace: browse and install plugins that bundle skills, MCP servers, subagents, rules, and hooks, or install them from your shell without opening the CLI with `agy plugin install <plugin-name>@antigravity-plugins-official`; install one straight from a folder on your computer with `+ Install from local directory...`; fill in any settings a plugin needs in a simple form before it turns on; and manage installed plugins with `/plugin install`, `uninstall`, `enable`, `disable`, and `list`.
