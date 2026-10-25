@@ -42,7 +42,7 @@ Environment:
                                    Required if that binary cannot run on this host.
 
 Requirements:
-  - curl, jq, tar, python3
+  - curl, jq, tar, python3, patchelf
   - native aarch64 Termux clang, or \$ANDROID_NDK_HOME with an aarch64 Android clang
 EOF
 }
@@ -66,7 +66,7 @@ trap cleanup EXIT
 check_prereqs() {
   info "Checking build prerequisites..."
   local missing=()
-  for cmd in curl jq tar python3; do
+  for cmd in curl jq tar python3 patchelf; do
     if ! command -v "$cmd" &>/dev/null; then
       missing+=("$cmd")
     fi
@@ -238,6 +238,29 @@ fi
 
 chmod +x bin/agy
 ok "Native Termux bootstrapper compiled successfully."
+
+# Compile auxiliary compatibility library if present.
+if [[ -f "lib/agy_compat.c" ]]; then
+  info "Compiling auxiliary compatibility library..."
+  if ! "$local_cc" -O2 -fPIC -shared -nostdlib -o bin/libagy_compat.so lib/agy_compat.c; then
+    die "Compilation of lib/agy_compat.c failed."
+  fi
+  chmod 0755 bin/libagy_compat.so
+  ok "Auxiliary compatibility library compiled successfully."
+fi
+
+# Patch ELF interpreter and RPATH on agy.va39.
+termux_prefix="${PREFIX:-/data/data/com.termux/files/usr}"
+info "Patching ELF interpreter and RPATH on bin/agy.va39..."
+patchelf --set-interpreter "${termux_prefix}/glibc/lib/ld-linux-aarch64.so.1" \
+         --set-rpath "\$ORIGIN:\$ORIGIN/../glibc/lib:${termux_prefix}/glibc/lib" \
+         bin/agy.va39
+
+if [[ -f "bin/libagy_compat.so" ]]; then
+  info "Adding libagy_compat.so DT_NEEDED dependency to bin/agy.va39..."
+  patchelf --add-needed "libagy_compat.so" bin/agy.va39
+fi
+ok "ELF patching complete on bin/agy.va39."
 
 if [[ -n "${TERMUX_VERSION:-}" ]]; then
   info "Validating built Termux binary with --help..."
