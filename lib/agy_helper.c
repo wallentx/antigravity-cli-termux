@@ -640,6 +640,14 @@ static int resolve_qemu_for_cpu(const char *prefix, char *qemu_path, size_t qemu
     return 0;
 }
 
+static void try_direct_exec(int has_qemu, const char *patched_bin, char **argv) {
+    if (!has_qemu) {
+        argv[0] = (char *)patched_bin;
+        // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
+        (void)execv(patched_bin, argv);
+    }
+}
+
 int main(int argc, char **argv) {
     char exec_path[PATH_MAX];
     char lib_path[PATH_MAX + 16];
@@ -733,6 +741,8 @@ int main(int argc, char **argv) {
     if (written < 0 || written >= (int)sizeof(patched_bin)) {
         return 1;
     }
+
+    try_direct_exec(qemu != NULL, patched_bin, argv);
 
     // We allocate enough space for: qemu + loader + "--library-path" + lib_path
     // + patched_bin + user args + NULL

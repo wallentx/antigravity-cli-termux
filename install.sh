@@ -43,12 +43,18 @@ cleanup() {
     if [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]]; then
       mv -f "$AGY_VA39_BAK" "$INSTALL_BIN_DIR/agy.va39" || true
     fi
+    if [[ -n "${AGY_COMPAT_BAK:-}" && -f "$AGY_COMPAT_BAK" ]]; then
+      mv -f "$AGY_COMPAT_BAK" "$INSTALL_BIN_DIR/libagy_compat.so" || true
+    fi
   else
     if [[ -n "${AGY_BAK:-}" && -f "$AGY_BAK" ]]; then
       rm -f "$AGY_BAK" || true
     fi
     if [[ -n "${AGY_VA39_BAK:-}" && -f "$AGY_VA39_BAK" ]]; then
       rm -f "$AGY_VA39_BAK" || true
+    fi
+    if [[ -n "${AGY_COMPAT_BAK:-}" && -f "$AGY_COMPAT_BAK" ]]; then
+      rm -f "$AGY_COMPAT_BAK" || true
     fi
   fi
 }
@@ -290,11 +296,12 @@ mkdir -p "$EXTRACT_DIR"
 download_with_progress "$URL" "$TMP" || die
 
 # ── Extraction ────────────────────────────────────────────────────────────────
-tar -xz -C "$EXTRACT_DIR" -f "$TMP" agy agy.va39 >/dev/null 2>&1 &
+tar -xz -C "$EXTRACT_DIR" -f "$TMP" >/dev/null 2>&1 &
 spinner $! "Extracting binaries..." || die
 
 AGY_BAK=""
 AGY_VA39_BAK=""
+AGY_COMPAT_BAK=""
 if [[ -f "$INSTALL_BIN_DIR/agy" ]]; then
   AGY_BAK="$INSTALL_BIN_DIR/agy.bak.$$"
   mv -f "$INSTALL_BIN_DIR/agy" "$AGY_BAK" || die "Failed to back up existing agy binary from $INSTALL_BIN_DIR"
@@ -303,9 +310,18 @@ if [[ -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
   AGY_VA39_BAK="$INSTALL_BIN_DIR/agy.va39.bak.$$"
   mv -f "$INSTALL_BIN_DIR/agy.va39" "$AGY_VA39_BAK" || die "Failed to back up existing agy.va39 binary from $INSTALL_BIN_DIR"
 fi
+if [[ -f "$INSTALL_BIN_DIR/libagy_compat.so" ]]; then
+  AGY_COMPAT_BAK="$INSTALL_BIN_DIR/libagy_compat.so.bak.$$"
+  mv -f "$INSTALL_BIN_DIR/libagy_compat.so" "$AGY_COMPAT_BAK" || true
+fi
 
 install -m 0755 "$EXTRACT_DIR/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to install agy binary to $INSTALL_BIN_DIR"
 install -m 0755 "$EXTRACT_DIR/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
+if [[ -f "$EXTRACT_DIR/libagy_compat.so" ]]; then
+  install -m 0755 "$EXTRACT_DIR/libagy_compat.so" "$INSTALL_BIN_DIR/libagy_compat.so" || die "Failed to install libagy_compat.so to $INSTALL_BIN_DIR"
+  mkdir -p "${TERMUX_PREFIX}/glibc/lib" 2>/dev/null || true
+  cp -pf "$EXTRACT_DIR/libagy_compat.so" "${TERMUX_PREFIX}/glibc/lib/libagy_compat.so" 2>/dev/null || true
+fi
 rm -rf "$EXTRACT_DIR"
 
 # ── Verify twin-binary ────────────────────────────────────────────────────────
