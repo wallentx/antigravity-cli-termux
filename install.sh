@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+echo "installing dependencies for antigravity-cli termux  "
+pkg update -y
+pkg install glibc-repo -y
+pkg install glibc -y
+
+
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
