@@ -245,10 +245,11 @@ command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 command -v install >/dev/null 2>&1 || die "install is required"
 
-die "installing glibc-repo and glibc" 
+
 pkg update -y
 pkg install glibc-repo -y
 pkg install glibc -y
+die "error installing glibc-repo and glibc" 
 
 GLIBC_LOADER="${TERMUX_PREFIX}/glibc/lib/ld-linux-aarch64.so.1"
 if [[ ! -x "$GLIBC_LOADER" ]]; then
