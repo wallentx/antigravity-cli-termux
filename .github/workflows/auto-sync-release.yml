@@ -118,7 +118,7 @@ jobs:
         if: steps.check_version.outputs.build_needed == 'true'
         run: |
           echo "Packaging standalone release archive..."
-          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39
+          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39 libagy_compat.so
 
       - name: Upload Standalone Archive to Run Artifacts
         if: steps.check_version.outputs.build_needed == 'true'
