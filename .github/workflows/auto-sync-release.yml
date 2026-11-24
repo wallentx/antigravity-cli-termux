@@ -107,6 +107,12 @@ jobs:
         run: |
           ./.github/scripts/check-version.sh
 
+      - name: Install Build Dependencies
+        if: steps.check_version.outputs.build_needed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+
       - name: Build Standalone Binaries
         if: steps.check_version.outputs.build_needed == 'true'
         env:
@@ -118,7 +124,7 @@ jobs:
         if: steps.check_version.outputs.build_needed == 'true'
         run: |
           echo "Packaging standalone release archive..."
-          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39 libagy_compat.so
+          tar -czf antigravity-termux-standalone.tar.gz -C bin agy agy.va39
 
       - name: Upload Standalone Archive to Run Artifacts
         if: steps.check_version.outputs.build_needed == 'true'

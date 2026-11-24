@@ -221,12 +221,19 @@ word_rewrites = {
 for off in range(lo, hi, 4):
     w = get(off)
     if w in word_rewrites: put(off, word_rewrites[w])
+gvisor_probe_count = 0
 for off in range(0, len(data) - 12, 4):
     if get(off) == 0xAA1F03E5 and get(off + 4) == 0xAA1F03E6 and get(off + 8) == 0xD28036E0 and (get(off + 12) & 0xFC000000) == 0x94000000:
         put(off + 8, 0xD2800600); faccessat2_count += 1
+    elif get(off) == 0x5281FB60 and get(off + 4) == 0x72A5E000 and (get(off + 8) & 0xFC000000) == 0x94000000:
+        if (get(off + 12) & 0xFF00001F) == 0x34000000:
+            put(off + 8, 0x52800000)
+        else:
+            put(off + 8, 0x12800000)
+        gvisor_probe_count += 1
 dst.write_bytes(data)
 dst.chmod(0o755)
-print(f"Patched parameters: ubfx={ubfx_count}, lsl={lsl_count}, mask={mask_count}, mmap={mmap_count}, faccessat2={faccessat2_count}")
+print(f"Patched parameters: ubfx={ubfx_count}, lsl={lsl_count}, mask={mask_count}, mmap={mmap_count}, faccessat2={faccessat2_count}, gvisor_probe={gvisor_probe_count}")
 PY
 ok "Patched binary generated: bin/agy.va39"
 
@@ -239,27 +246,14 @@ fi
 chmod +x bin/agy
 ok "Native Termux bootstrapper compiled successfully."
 
-# Compile auxiliary compatibility library if present.
-if [[ -f "lib/agy_compat.c" ]]; then
-  info "Compiling auxiliary compatibility library..."
-  if ! "$local_cc" -O2 -fPIC -shared -nostdlib -o bin/libagy_compat.so lib/agy_compat.c; then
-    die "Compilation of lib/agy_compat.c failed."
-  fi
-  chmod 0755 bin/libagy_compat.so
-  ok "Auxiliary compatibility library compiled successfully."
-fi
-
-# Patch ELF interpreter and RPATH on agy.va39.
-termux_prefix="${PREFIX:-/data/data/com.termux/files/usr}"
+# Patch ELF interpreter and RPATH on agy.va39 so direct kernel execution preserves
+# /proc/self/exe for Go daemonization. Default to canonical Termux PREFIX so CI
+# build hosts never bake host-specific paths into release archives.
+target_prefix="${AGY_TARGET_PREFIX:-/data/data/com.termux/files/usr}"
 info "Patching ELF interpreter and RPATH on bin/agy.va39..."
-patchelf --set-interpreter "${termux_prefix}/glibc/lib/ld-linux-aarch64.so.1" \
-         --set-rpath "\$ORIGIN:\$ORIGIN/../glibc/lib:${termux_prefix}/glibc/lib" \
+patchelf --set-interpreter "${target_prefix}/glibc/lib/ld-linux-aarch64.so.1" \
+         --set-rpath "\$ORIGIN:\$ORIGIN/../glibc/lib:${target_prefix}/glibc/lib" \
          bin/agy.va39
-
-if [[ -f "bin/libagy_compat.so" ]]; then
-  info "Adding libagy_compat.so DT_NEEDED dependency to bin/agy.va39..."
-  patchelf --add-needed "libagy_compat.so" bin/agy.va39
-fi
 ok "ELF patching complete on bin/agy.va39."
 
 if [[ -n "${TERMUX_VERSION:-}" ]]; then

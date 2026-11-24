@@ -422,6 +422,15 @@ static int perform_transactional_update(const char *dir, const char *latest_tag)
         "agy agy.va39 && "
         "test -s \"$tmp/agy\" && test -x \"$tmp/agy\" && "
         "test -s \"$tmp/agy.va39\" && test -x \"$tmp/agy.va39\" && "
+        "termux_prefix=\"${PREFIX:-/data/data/com.termux/files/usr}\"; "
+        "loader_path=\"$termux_prefix/glibc/lib/ld-linux-aarch64.so.1\"; "
+        "if [ \"$loader_path\" != "
+        "\"/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1\" ] "
+        "&& command -v patchelf >/dev/null 2>&1; then "
+        "patchelf --set-interpreter \"$loader_path\" "
+        "--set-rpath \"\\$ORIGIN:\\$ORIGIN/../glibc/lib:$termux_prefix/glibc/lib\" "
+        "\"$tmp/agy.va39\" || exit 1; "
+        "fi && "
         "\"$tmp/agy\" --help >/dev/null 2>&1 && "
         "install -m 0755 \"$tmp/agy\" \"$new_agy\" && "
         "install -m 0755 \"$tmp/agy.va39\" \"$new_payload\" && "
@@ -640,11 +649,13 @@ static int resolve_qemu_for_cpu(const char *prefix, char *qemu_path, size_t qemu
     return 0;
 }
 
-static void try_direct_exec(int has_qemu, const char *patched_bin, char **argv) {
+static void try_direct_exec(int has_qemu, char *patched_bin, char **argv) {
     if (!has_qemu) {
-        argv[0] = (char *)patched_bin;
+        char *orig_argv0 = argv[0];
+        argv[0] = patched_bin;
         // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
         (void)execv(patched_bin, argv);
+        argv[0] = orig_argv0;
     }
 }
 
