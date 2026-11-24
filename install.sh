@@ -308,6 +308,17 @@ install -m 0755 "$EXTRACT_DIR/agy" "$INSTALL_BIN_DIR/agy" || die "Failed to inst
 install -m 0755 "$EXTRACT_DIR/agy.va39" "$INSTALL_BIN_DIR/agy.va39" || die "Failed to install agy.va39 binary to $INSTALL_BIN_DIR"
 rm -rf "$EXTRACT_DIR"
 
+DEFAULT_GLIBC_LOADER="/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1"
+if [[ "$GLIBC_LOADER" != "$DEFAULT_GLIBC_LOADER" ]]; then
+  if command -v patchelf >/dev/null 2>&1; then
+    patchelf --set-interpreter "$GLIBC_LOADER" \
+             --set-rpath "\$ORIGIN:\$ORIGIN/../glibc/lib:${TERMUX_PREFIX}/glibc/lib" \
+             "$INSTALL_BIN_DIR/agy.va39" || die "Failed to update ELF interpreter for custom PREFIX"
+  else
+    info "Non-default PREFIX detected without patchelf; direct execution will fall back to glibc loader."
+  fi
+fi
+
 # ── Verify twin-binary ────────────────────────────────────────────────────────
 if [[ ! -f "$INSTALL_BIN_DIR/agy" || ! -f "$INSTALL_BIN_DIR/agy.va39" ]]; then
   rm -f "$INSTALL_BIN_DIR/agy" "$INSTALL_BIN_DIR/agy.va39"
