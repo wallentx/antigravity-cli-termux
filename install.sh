@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 # Antigravity - Termux Installer
 set -Eeuo pipefail
 
@@ -243,6 +244,14 @@ divider
 command -v curl >/dev/null 2>&1  || die "curl is required"
 command -v tar  >/dev/null 2>&1  || die "tar is required"
 command -v install >/dev/null 2>&1 || die "install is required"
+
+(
+  pkg update -y &&
+  pkg install glibc-repo -y &&
+  pkg install glibc -y
+) >/dev/null 2>&1 &
+spinner $! "Installing glibc-repo and glibc..." || die "error installing glibc-repo and glibc"
+
 
 GLIBC_LOADER="${TERMUX_PREFIX}/glibc/lib/ld-linux-aarch64.so.1"
 if [[ ! -x "$GLIBC_LOADER" ]]; then
